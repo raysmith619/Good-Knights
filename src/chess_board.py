@@ -9,6 +9,7 @@ from select_dots import SelectDots
 from select_trace import SlTrace
 from select_error import SelectError
 
+
 class Piece(Enum):
     P = 1
     N = 2
@@ -77,7 +78,7 @@ class ChessBoard:
         """
         if isinstance(loc, str):
             if len(loc) != 2:
-                raise SelectError("Unrecognized notation not 2 chars: {}".format(loc))
+                raise SelectError(f"Unrecognized notation not 2 chars: {loc}")
             col_let = loc[0].lower()
             col_index = ord(col_let) - ord('a')
             row_let = loc[1]
@@ -311,6 +312,11 @@ class ChessBoard:
         """
         loc = self.loc2tuple(loc)
         return self.squares[loc[0]][loc[1]]
+
+
+loc2desc = ChessBoard.loc2desc 
+loc2tuple = ChessBoard.loc2tuple 
+path_desc = ChessBoard.path_desc
 
  
 #########################################################################

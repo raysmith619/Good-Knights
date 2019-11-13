@@ -9,7 +9,6 @@ from select_timeout import SelectTimeout
 
 from chess_board import ChessBoard
 from chess_board_display import ChessBoardDisplay
-from pydoc import describe
 
 loc2desc = ChessBoard.loc2desc 
 loc2tuple = ChessBoard.loc2tuple 
@@ -21,28 +20,6 @@ display_path = ChessBoardDisplay.display_path
 From Stackoverflow.com
 """
 import time
-import concurrent.futures as futures
-
-
-def timeout(timelimit):
-    def decorator(func):
-        def decorated(*args, **kwargs):
-            with futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(func, *args, **kwargs)
-                try:
-                    result = future.result(timelimit)
-                except futures.TimeoutError:
-                    print('Timedout!')
-                    raise TimeoutError from None
-                else:
-                    print(result)
-                executor._threads.clear()
-                futures.thread._threads_queues.clear()
-                return result
-        return decorated
-    return decorator
-
- 
 def by_first(tp):
     """ Sort helper to pick first tuple element
     """
@@ -55,6 +32,7 @@ class KnightsPaths:
     time_limit = 60
     
     def __init__(self, board=None, loc=None, closed_tours=False, max_try=None, time_limit=None,
+                 backup_limit=None,
                  max_look_ahead=5):
         """ Setup for kight path generation
         Via depth-first search of night moves which traverse board without revisiting any square.
@@ -65,13 +43,14 @@ class KnightsPaths:
         :max_look_ahead: maximum number of moves to look ahead in best move determination
         :max_tries: Number of tries (no more moves) for path default: no max
         :time_Limit: time limit, in seconds to produce a result (return path)
-                    default: 60 seconds
+                    default: 5 seconds
+        :backup_limit: Number of backups at which we try secondary search start point
         """
         self.ntry = 0                            # number of tries so far
         self.max_look_ahead = max_look_ahead
         self.max_try = max_try
         if time_limit is None:
-            time_limit = 60
+            time_limit = 5
         KnightsPaths.time_limit = time_limit    # Make class variable to support wrapper
         self.time_begin = datetime.datetime.now()
         self.time_end = self.time_begin + datetime.timedelta(seconds=time_limit)
@@ -92,7 +71,11 @@ class KnightsPaths:
         self.nbackup = 0           # Number of backups, not including non-tour paths
         self.ntrack_ntie = 0
         self.ntie = 0
- 
+        self.last_complete_path = None  # Recording non-tours, iff looking for one
+        self.is_complete_tour = False
+        self.is_closed_tour = False
+        self.backup_limit = backup_limit
+          
     ###@timeout(time_limit)
     def build_path_stack(self):
         """ Agument path_stack with a next move
@@ -113,11 +96,15 @@ class KnightsPaths:
                 if SlTrace.trace("complete_paths"):
                     self.display_stack_path("complete_paths")
                 self.ncomplete_path += 1             # Count all complete paths
+                self.is_complete_tour = True
                 if self.closed_tours:
                     start_loc = self.path_stack[0][0]
                     end_loc = self.path_stack[-1][0]
                     if board.is_neighbor(start_loc, end_loc):
+                        self.is_closed_tour = True
                         return True
+                    
+                    self.last_complete_path = self.path_stack_path()
                     
                     if SlTrace.trace("non-closed"):
                         self.display_stack_path("ignoring non-closed tour {} to {}"
@@ -149,6 +136,9 @@ class KnightsPaths:
                 if SlTrace.trace("no_more_moves"):
                     self.display_stack_path("no_more_moves")
                 self.nbackup += 1
+                if (self.last_complete_path is None
+                        or len(self.path_stack) > len(self.last_complete_path)):
+                    self.last_complete_path = self.path_stack_path()
                 del self.path_stack[-1]
                 if len(self.path_stack) <= self.track_level:
                     self.track_level = len(self.path_stack)
@@ -623,7 +613,7 @@ class KnightsPaths:
                 self.mw.update_idletasks()
                 self.mw.update()
                 if len(path) >= self.ncols*self.nrows-4:
-                    ChessBoard.display_path(desc, path, ncols=self.ncols, nrows=self.nrows)
+                    ChessBoardDisplay.display_path(desc, path, ncols=self.ncols, nrows=self.nrows)
 
 
     def get_knight_moves(self, loc=None, board=None):

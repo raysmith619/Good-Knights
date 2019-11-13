@@ -49,7 +49,8 @@ class ChessBoardDisplay:
     board_picts_mw = []
 
     @classmethod
-    def display_path(cls, desc, path, nrows=8, ncols=8,
+    def display_path(cls, path,
+                     desc=None, nrows=8, ncols=8,
                      width=400, height=400):
         """ Display board with path squares labeled
         :desc: text description
@@ -63,12 +64,14 @@ class ChessBoardDisplay:
         mw_base.withdraw() 
         mw.geometry("%dx%d" % (width, height))
         frame = Frame(mw, width=width, height=height, bg="", colormap="new")
-        frame.pack(fill=BOTH, expand=YES)
+        frame.pack(fill=BOTH, expand=True)
         mw.title(desc) 
         
         #creation of an instance
         cb = ChessBoard(nrows=nrows, ncols=ncols)
-        cbd = ChessBoardDisplay(mw=mw, frame=frame, board=cb, path=path, nrows=nrows, ncols=ncols)
+        cbd = ChessBoardDisplay(mw=mw, frame=frame, board=cb, path=path,
+                                desc=desc,
+                                width=width, height=height, nrows=nrows, ncols=ncols)
         for loc in path:
             loc = loc2tuple(loc)
             cbd.label_square(loc)
@@ -128,6 +131,7 @@ class ChessBoardDisplay:
                 
     def __init__(self,
                 frame=None, mw=None,
+                desc="",
                 width=400, height=400,     # REQUIRED, if window not expanded
                 board=None,
                 path=None,
@@ -135,6 +139,7 @@ class ChessBoardDisplay:
                 ncols=8,
                 ):
         self.label_number = 0               # Number for default square labeling
+        self.desc = desc
         if board is None:
             board = ChessBoard(nrows=nrows, ncols=ncols)
             nrows = board.nrows             # Inherit from board
@@ -153,7 +158,16 @@ class ChessBoardDisplay:
             frame = Frame(mw=mw, width=width, height=height, bg="", colormap="new")
             frame.pack(fill=BOTH, expand=YES)
         self.frame = frame
-            
+        select_dots = self.create_board(frame, mw, width=width, height=height,
+                          nrows=nrows, ncols=ncols)
+        self.select_dots = select_dots
+        self.nrows = select_dots.nrows      # Local copies
+        self.ncols = select_dots.ncols
+
+    def create_board(self, frame=None, mw=None,
+                     nrows=None, ncols=None,
+                     width=None, height=None):
+        
         select_dots = SelectDots(frame, mw,
                         width=width, height=height,     # REQUIRED, if window not expanded
                         nrows=nrows, ncols=ncols,
@@ -165,18 +179,30 @@ class ChessBoardDisplay:
                         edge_width=0,
                         highlighting=False
                         )
-        self.select_dots = select_dots
-        self.nrows = select_dots.nrows      # Local copies
-        self.ncols = select_dots.ncols
         for part in select_dots.get_parts("region"):
             row = part.get_row()
             col = part.get_col()
             part.turn_on()
             if (row+col)%2 == 1:
                 part.set_color('dark gray')
-        self.select_dots = select_dots
         select_dots.display()
+        return select_dots
+
+
+    def destroy(self):
+        if self.select_dots is not None:
+            self.select_dots.destroy()
+            self.select_dots = None
+        if self.mw is not None:
+            self.mw.destroy()
+            self.mw = None
             
+    def resize(self, width=None, height=None):
+        select_dots = self.create_board(self.frame, self.mw, width=width, height=height,
+                                         nrows=self.nrows, ncols=self.ncols)
+        if hasattr(self, "select_dots") and self.select_dots is not None:
+            self.select_dots.destroy()    
+        self.select_dots = select_dots
 
     def add_centered_text(self, text, x=None, y=None,
                           color=None, color_bg=None,
@@ -323,6 +349,8 @@ class ChessBoardDisplay:
             desc = self.loc2desc(loc)
             path_str += desc 
         return path_str
+
+display_path = ChessBoardDisplay.display_path
 
 #########################################################################
 #          Self Test                                                    #
