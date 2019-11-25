@@ -1,3 +1,7 @@
 # Good-Knights
 A simple examination of the chess "Knights Tour" problem
 A sample screen shot, showing knight paths, can be found in the Docs directory.
+## Introduction
+The "Knights Tour" problem is a well known chess exercise in which the solver places the chess piece, a knight, on one square of an otherwise empty chess board, and proceeds to discover, using legal chess knight moves, a path covering all the chess board squares, entering each square but once.  If successful in covering all squares, and the ending square is a knight's move away from the initial square this is call a "closed tour".  An interesting observation is that the discovery of just one such closed tour demonstrates that there exists at least one such "closed tour" starting at any square.  The knight's tour problem has been studied extensively and references can easily be found on the Internet.  My interest in the problem and the focus of this program is an informal exercise in game strategy, and additionally, exercises in graphical presentation of such an exercise.  To widen any potential audience, I have chosen tkinter a GUI tool provided in the basic Python 3 download provided from the [Python Source] (www.python.org).
+
+The program makes use of another repository dots, for the code to create a square grid.  To create you own version, download Good-Knights, download Dots, the include the path from dots/src directory.  The main program is the file src/good_knights.py.
