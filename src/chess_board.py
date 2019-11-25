@@ -185,10 +185,11 @@ class ChessBoard:
         return self.get_knight_moves(loc)
 
 
-    def get_knight_moves(self, loc=None):
+    def get_knight_moves(self, loc=None, only_empty=False):
         """ Get legal moves for given piece, from loc
         :piece: piece to move default: Knight
         :loc: location str or tuple
+        :only_empty: True-> only consider empty squares
         :returns: list of tuples for legal moves
         """
 
@@ -226,6 +227,13 @@ class ChessBoard:
         ci,ri = col_index-2, row_index-1        # (8)
         if ci >= 0 and ri >= 0:
             pbs.append((ci,ri))
+        if only_empty:
+            epbs = []
+            for loc in pbs:
+                if self.is_empty(loc):
+                    epbs.append(loc)
+            return epbs
+        
         return pbs
 
 
@@ -240,6 +248,14 @@ class ChessBoard:
             return True
         
         return False
+
+
+    def clear_loc(self, loc=None):
+        """ Clear square to empty
+        """
+        loc = self.loc2tuple(loc)
+        self.squares[loc[0]][loc[1]] = ""
+        self.nempty += 1        
         
 
     def set_piece(self, piece, loc=None):
@@ -276,6 +292,18 @@ class ChessBoard:
         """ Check if square is empty (unoccupied)
         """
         loc = self.loc2tuple(loc)
+        if len(loc) < 2:
+            SlTrace.lg(f"loc{loc} to short")
+            return False
+        
+        if loc[0] >= self.nrows:
+            SlTrace.lg(f"loc(loc[0]) out of range")
+            return False
+        
+        if loc[1] >= self.nrows:
+            SlTrace.lg(f"loc(loc[0]) out of range")
+            return False
+        
         if self.squares[loc[0]][loc[1]] == "":
             return True
         

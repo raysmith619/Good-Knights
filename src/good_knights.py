@@ -30,11 +30,12 @@ Develop board display to provide current state, lookahead moves
 
    
 """
+import os
 import argparse
 import re
 from tkinter import *
 
-from select_window import SelectWindow
+from grid_window import GridWindow
 from select_trace import SlTrace
 from chess_board import ChessBoard
 from chess_board_display import ChessBoardDisplay
@@ -48,6 +49,8 @@ display_path = ChessBoardDisplay.display_path
 
 closed_tours = True         # True => only accept closed tours
 display_complete = True    # True => display each complete(cover all) path
+display_move = False
+move_time = .1              # Time per move (seconds)
 display_path_board = False  # True => display path board each path
 track_all_path = False
 ###track_all_path = True               # TFD
@@ -55,7 +58,8 @@ max_look_ahead = 5          # Maximum look-ahead for best move testing
 nrows = ncols = 8
 ###nrows = ncols = 6       # TFD
 ###nrows = ncols = 4       # TFD
-
+run = False             # True - run on beginning, False - wait for arrangement
+###run = True              ### TFD
 start_ri = 0
 ###start_ri = 2        # TFD
 end_ri = nrows-1
@@ -67,6 +71,7 @@ sqno = 0
 all_paths = True
 all_paths = False       #TFD
 time_out = .5              # Time limit for path calculation
+###time_out = 999              ### TFD
 trace = "stack_grow,complete_paths"
 trace = "stack_grow"
 trace = "back_off_trace"
@@ -89,8 +94,10 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
+app = None
 pWwm = Tk()                 # To support grid layout - MUST be done before wm
-wm = Tk()                   # To force GUI to main thread
+###wm = Tk()                   # To force GUI to main thread
+wm = pWwm
 pW = None
 paths_gen = None
 
@@ -98,86 +105,12 @@ def arrange_cmd():
     SlTrace.lg("Arrange Paths")
     screen_width = pWwm.winfo_screenwidth()
     screen_height = pWwm.winfo_screenheight()
-    first = pW.get_pa_var("first")
     start_x = 10
     start_y = 50
-    wrap = pW.get_pa_var("wrap")
-    last = pW.get_pa_var("last")
-    square = pW.get_pa_var("square")
-    lend = len(paths_gen.displayed_paths)
-    if last is None or last == "":
-        last = lend
-    tour = pW.get_pa_var("tour")
-    not_tour = pW.get_pa_var("not_tour")
-    comp = pW.get_pa_var("comp") 
-    not_comp = pW.get_pa_var("not_comp")  
+    dlist = paths_gen.displayed_paths
     size = pW.get_pa_var("size")
     arr = pW.get_pa_var("arr")
-    arr_list = []           # Arranged list
-    other_list = []
-    dlist = paths_gen.displayed_paths
-    for np in range(1, lend+1):
-        if first is None or first == "" or np < first:
-            if wrap:
-                arr_list.append(dlist[np-1])
-            else:
-                other_list.append(dlist[np-1])
-        elif last is None or last == "" or np > last:
-            other_list.append(dlist[np-1])
-        else:
-            arr_list.append(dlist[np-1])
-    
-    if square is not None and square != "":
-        a_list = []
-        o_list = []
-        for ad in arr_list:
-            start_loc = ad.path[0]
-            sq = ChessBoard.loc2desc(start_loc)
-            if re.search(square, sq):
-                a_list.append(ad)
-            else:
-                o_list.append(ad)
-        arr_list = a_list
-        other_list += o_list        
-    
-    if tour or not_tour:
-        a_list = []
-        o_list = []
-        for ad in arr_list:
-            used = False
-            is_tour = ad.is_closed_tour
-            if tour:
-                if is_tour:
-                    a_list.append(ad)
-                    used = True
-            if not_tour:
-                if not is_tour:
-                    a_list.append(ad)
-                    used = True
-            if not used:
-                o_list.append(ad)
-        arr_list = a_list
-        other_list += o_list        
-    
-    if comp or not_comp:
-        a_list = []
-        o_list = []
-        for ad in arr_list:
-            used = False
-            is_comp = ad.is_complete_tour
-            if comp:
-                if is_comp:
-                    a_list.append(ad)
-                    used = True
-            if not_comp:
-                if not is_comp:
-                    a_list.append(ad)
-                    used = True
-            if not used:
-                o_list.append(ad)
-        arr_list = a_list
-        other_list += o_list        
-
+    arr_list, other_list = pW.select_paths(dpaths=dlist)    
                 
     if arr == PathsWindow.ARR_TILE:
         cur_x, cur_y = start_x, start_y
@@ -191,7 +124,7 @@ def arrange_cmd():
                 cur_y += size
         for other_disp in other_list:
             other_disp.hide()
-    elif arr == PathsWindow.ARR_STACK:
+    elif arr == PathsWindow.ARR_STACK or arr == PathsWindow.ARR_LAYER:
         cur_x, cur_y = start_x, start_y
         for arr_disp in arr_list:
             SlTrace.lg(f"arrange {arr_disp.disp_board.desc}")
@@ -203,23 +136,80 @@ def arrange_cmd():
                 cur_x += size
         for other_disp in other_list:
             other_disp.hide()
-                
-def arrange_set():
-    global pW            
-    pW = PathsWindow(wm=pWwm, arrange_call=arrange_cmd)
-    pW.set_pa_var("arr", pW.ARR_TILE)
-    pW.set_pa_var("sort", pW.SORT_ORIG)
-    
-def pause_cmd():
-    """ Run / continue game
-    """
-    SlTrace.lg("pause_cmd TBD")
 
+def run_set():
+    global paths_gen, display_move, time_out
+    if paths_gen is not None:
+        paths_gen.destroy()
+        paths_gen = None
+    use_prev_list = pW.get_pa_var("prev_list")
+    if use_prev_list and pW.prev_arr_list is not None:
+        path_starts = pW.get_prev_starts()
+    else:    
+        path_starts = pW.get_starts(start_ri=start_ri, end_ri=end_ri,
+                                start_ci=start_ci, end_ci=end_ci,
+                                nrows=nrows, ncols=ncols)
+        
+    time_limit = pW.get_pa_var("time_limit")
+    if time_limit is None or time_limit == "":
+        pass            # use setup
+    else:
+        time_out = time_limit
+
+    display_move = pW.get_pa_var("display_move")
+    move_time = pW.get_pa_var("move_time")
+    if move_time is None or move_time == "":
+        move_time = .05
+    ###path_starts = [(0,0)]            # TFD - one path
+    paths_gen = PathsGen(path_starts=path_starts,
+        time_out=time_out,
+        closed_tours=closed_tours,
+        display_move=display_move,
+        pW=pW,
+        move_time=move_time,
+        width=width,
+        height=height,
+        nrows = nrows,
+        ncols = ncols,
+        max_look_ahead=max_look_ahead)
 
 def run_cmd():
-    """ Run / continue game
-    """
-    SlTrace.lg("run_cmd TBD")
+    run_set()
+    paths_gen.go()        
+
+def pause_cmd():
+    ###SlTrace.lg("TBD")
+    pass
+
+def continue_cmd():
+    ###SlTrace.lg("TBD")
+    pass
+
+def step_cmd():
+    if paths_gen is None:
+        run_set()
+        paths_gen.go(in_step=True)
+    else:
+        paths_gen.next_move()
+        pW.set_in_step()
+
+def back_cmd():
+    paths_gen.backup_move(keep_move=True)
+
+def stop_cmd():
+    SlTrace.lg("User stop")
+
+    
+        
+    
+                    
+def arrange_set():
+    global pW            
+    pW = PathsWindow(wm=pWwm, arrange_call=arrange_cmd,
+         run_call=run_cmd, pause_call=pause_cmd, continue_call=continue_cmd,
+         step_call=step_cmd, back_call=back_cmd, stop_call=stop_cmd)
+    pW.set_pa_var("arr", pW.ARR_TILE)
+    pW.set_pa_var("sort", pW.SORT_ORIG)
     
 parser = argparse.ArgumentParser()
 
@@ -227,10 +217,12 @@ parser.add_argument('--closed_tours', type=str2bool, dest='closed_tours', defaul
 parser.add_argument('--display_complete', type=str2bool, dest='display_complete', default=display_complete)
 parser.add_argument('--display_path_board', type=str2bool, dest='display_path_board', default=display_path_board)
 parser.add_argument('--max_look_ahead=', type=int, dest='max_look_ahead', default=max_look_ahead)
+parser.add_argument('--move_time=', type=float, dest='move_time', default=move_time)
 parser.add_argument('--ncols=', type=int, dest='ncols', default=ncols)
 parser.add_argument('--nrows=', type=int, dest='nrows', default=nrows)
 parser.add_argument('--end_ci=', type=int, dest='end_ci', default=end_ci)
 parser.add_argument('--end_ri=', type=int, dest='end_ri', default=end_ri)
+parser.add_argument('--run', type=str2bool, dest='run', default=run)
 parser.add_argument('--time_out=', type=int, dest='time_out', default=time_out)
 parser.add_argument('--width=', type=int, dest='width', default=width)
 parser.add_argument('--height=', type=int, dest='height', default=height)
@@ -243,42 +235,31 @@ display_path_board = args.display_path_board
 end_ci = args.end_ci
 end_ri = args.end_ri
 max_look_ahead = args.max_look_ahead
+move_time = args.move_time
 ncols = args.ncols
 nrows= args.nrows
+if end_ci >= ncols:
+    end_ci = ncols-1
+if end_ri >= nrows:
+    end_ri = nrows-1
+run = args.run    
 time_out = args.time_out
 width = args.width
 height = args.height
 trace = args.trace
+pgm_info = "%s %s\n" % (os.path.basename(sys.argv[0]), " ".join(sys.argv[1:]))
+SlTrace.lg(pgm_info)
 if trace:
     SlTrace.setFlags(trace)
 
 SlTrace.setLogStdTs(True)
-app = SelectWindow(wm,
+app = GridWindow(wm,
                 title="Good Knights",
+                arrange_selection=False,
                 pgmExit=pgm_exit,
                 )
-app.add_menu_command("Run", run_cmd)
-app.add_menu_command("Pause", pause_cmd)
-
-path_starts = []
-for ri in range(start_ri, end_ri+1):
-    for ci in range(start_ci, end_ci+1):
-        loc = (ci,ri)
-        path_starts.append(loc)
-
 arrange_set()
-
-paths_gen = PathsGen(path_starts=path_starts,
-    time_out=time_out,
-    closed_tours=closed_tours,
-    width=width,
-    height=height,
-    nrows = nrows,
-    ncols = ncols,
-    max_look_ahead=max_look_ahead)
-paths_gen.go()        
-
-if display_complete:
-    wm.mainloop()
+if run:
+    run_cmd()
 
 wm.mainloop()

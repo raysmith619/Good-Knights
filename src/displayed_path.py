@@ -36,7 +36,7 @@ class DisplayedPath:
         self.org_no = org_no
         self.desc = desc
         self.time = time
-        self.disp_board.mw.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.disp_board.wm.protocol("WM_DELETE_WINDOW", self.destroy)
         self.is_closed_tour = is_closed_tour
         self.is_complete_tour = is_complete_tour
         
@@ -44,27 +44,27 @@ class DisplayedPath:
         if self.disp_board is not None:
             self.disp_board.destroy()
             
-    def get_mw(self):
-        return self.disp_board.mw
+    def get_wm(self):
+        return self.disp_board.wm
 
     def hide(self):
-        mw = self.get_mw()
-        mw.withdraw()
+        wm = self.get_wm()
+        wm.withdraw()
         
     def show(self):
-        mw = self.get_mw()
-        mw.update()
-        mw.deiconify()
+        wm = self.get_wm()
+        wm.update()
+        wm.deiconify()
 
 
     def get_size_pos(self):
         """ Get widow position and size
         :returns: (w, h, x, y) in pixels
         """
-        mw = self.get_mw()                      # Protect against closed windows
-        if mw is None:
+        wm = self.get_wm()                      # Protect against closed windows
+        if wm is None:
             self.recreate()
-        geo = self.get_mw().geometry()
+        geo = self.get_wm().geometry()
         args1 = geo.split("+")
         wh_strs = args1[0].split("x")
         width, height = int(wh_strs[0]), int(wh_strs[1])
@@ -107,13 +107,13 @@ class DisplayedPath:
                          width=width, height=height)
             if self.disp_board is not None:
                 self.disp_board.destroy()
-                ###self.disp_board.mw.destroy()
+                ###self.disp_board.wm.destroy()
             self.disp_board = disp_board
-        new_mw = self.disp_board.mw
+        new_wm = self.disp_board.wm
         width = int(width)
         height = int(height)
         x = int(x)
         y = int(y)
         geo = f"{width}x{height}+{x}+{y}"
-        new_mw.geometry(geo)
+        new_wm.geometry(geo)
         

@@ -5,10 +5,11 @@ Support searching for knights paths on a chess board calculation
 import datetime
 import traceback
 from select_trace import SlTrace
+from select_error import SelectError
 from select_timeout import SelectTimeout
 
 from chess_board import ChessBoard
-from chess_board_display import ChessBoardDisplay
+from chess_board_display import ChessBoardDisplay, ChessPiece
 
 loc2desc = ChessBoard.loc2desc 
 loc2tuple = ChessBoard.loc2tuple 
@@ -25,19 +26,61 @@ def by_first(tp):
     """
     return tp[0]
 
+class PathStackEntryDisplayInfo:
+    """ Display info, setup in display_move, used in undisplay_move
+    """
+    def __init__(self, connect_tags=None):
+        """ Setup Display info
+        :connect_tags: canvas tags for connection lines
+        """
+        if connect_tags is None:
+            connect_tags = []
+        self.connect_tags = connect_tags
+        
 
+class PathStackEntry:
+    """ move stack, containing information to suggest next move,
+    display move, etc.
+    """
+    def __init__(self, piece=None, loc=None, board=None, best_moves=None, display_info=None):
+        """ setup path stack entry
+        :piece: Chess piece string, e.g. N for black knight default: black knight
+        :loc: destination move location
+        :board: ChessBoard default: self.board playing board with move in place
+        :best_moves: list of follow-on moves in decreasing benefit default: unknown - calculate them
+                        next_move_list element: (score, move) where lower is better
+        :display_info: display info, used by display_move, undisplay_move
+        """
+        if piece is  None:
+            piece = "N"
+        self.piece = piece
+        if loc is None:
+            raise SelectError("loc missing")
+        
+        self.loc = loc
+        if board is None:
+            board = self.board
+        self.board = board
+        self.best_moves = best_moves
+        self.display_info = display_info
+
+        
 class KnightsPaths:
     """ Generates knight paths, given starting position
     """
-    time_limit = 60
-    
     def __init__(self, board=None, loc=None, closed_tours=False, max_try=None, time_limit=None,
-                 backup_limit=None,
+                 backup_limit=500,
+                 display_move=False,
+                 pW=None,
+                 move_time=.5,
+                 nrows=None, ncols=None,
                  max_look_ahead=5):
         """ Setup for kight path generation
         Via depth-first search of night moves which traverse board without revisiting any square.
         
         :board: Current chess board, default: generate empty board
+        :nrows: number of rows if board not present
+        :ncols: number of cols if board not present
         :loc: starting knight position                
         :closed_tours: return only closed tours
         :max_look_ahead: maximum number of moves to look ahead in best move determination
@@ -45,27 +88,38 @@ class KnightsPaths:
         :time_Limit: time limit, in seconds to produce a result (return path)
                     default: 5 seconds
         :backup_limit: Number of backups at which we try secondary search start point
+        :display_move: True - display move on board
+        :pW: control window (PathsWindow)
+        :move_time: time to display move default: .5 second
         """
         self.ntry = 0                            # number of tries so far
+        self.nmove = 0                           # NUmber of moves, including retries
+        self.path_stack = None
         self.max_look_ahead = max_look_ahead
         self.max_try = max_try
-        if time_limit is None:
-            time_limit = 5
-        KnightsPaths.time_limit = time_limit    # Make class variable to support wrapper
+        self.is_display_move = display_move
+        self.pW = pW
+        self.pW = pW
         self.time_begin = datetime.datetime.now()
-        self.time_end = self.time_begin + datetime.timedelta(seconds=time_limit)
+        self.move_time = move_time
         if board is None:
-            board = ChessBoard(ncols=8, nrows=8)
+            board = ChessBoard(ncols=ncols, nrows=nrows)
         self.board = board
         self.ncols = board.ncols
         self.nrows = board.nrows
+        self.len_ckt = self.ncols*self.nrows
+        self.display_board = None       # Board displaying moves during run
+        if self.is_display_move:
+            self.display_move_setup()
+            time_limit = 99999
+        elif time_limit is None:
+            time_limit = 1.0
+        self.time_limit = time_limit
+        self.time_end = self.time_begin + datetime.timedelta(seconds=time_limit)
         self.loc_start = loc
         self.closed_tours = closed_tours
-        self.board.set_piece('N', self.loc_start)
-        self.path_stack = [(self.loc_start, self.board, None)]
-                                    # (move, board, next_move list)
-                                    # board: playing board with move in place
-                                    # next_move_list element: (score, move) where lower is better
+        self.candidate_end_moves = self.get_knight_moves(loc)       # Possible end moves for closed tour
+        self.make_move('N', self.loc_start)
         self.track_level = self.ncols*self.nrows
         self.ncomplete_path = 0     # Number of paths found
         self.nbackup = 0           # Number of backups, not including non-tour paths
@@ -75,7 +129,7 @@ class KnightsPaths:
         self.is_complete_tour = False
         self.is_closed_tour = False
         self.backup_limit = backup_limit
-          
+              
     ###@timeout(time_limit)
     def build_path_stack(self):
         """ Agument path_stack with a next move
@@ -83,7 +137,8 @@ class KnightsPaths:
         """
         
         board = self.board
-        len_ckt = self.ncols*self.nrows
+        len_ckt = self.len_ckt
+        
         while True:
             self.time_check()
             ###board.update_display()      # Don't let display block
@@ -98,8 +153,8 @@ class KnightsPaths:
                 self.ncomplete_path += 1             # Count all complete paths
                 self.is_complete_tour = True
                 if self.closed_tours:
-                    start_loc = self.path_stack[0][0]
-                    end_loc = self.path_stack[-1][0]
+                    start_loc = self.path_stack[0].loc
+                    end_loc = self.path_stack[-1].loc
                     if board.is_neighbor(start_loc, end_loc):
                         self.is_closed_tour = True
                         return True
@@ -108,59 +163,81 @@ class KnightsPaths:
                     
                     if SlTrace.trace("non-closed"):
                         self.display_stack_path("ignoring non-closed tour {} to {}"
-                                                .format(loc2desc(self.path_stack[0][0]),
-                                                        loc2desc(self.path_stack[-1][0])))
+                                                .format(loc2desc(self.path_stack[0].loc),
+                                                        loc2desc(self.path_stack[-1].loc)))
                         self.display_stack("non-closed")
                     if self.max_try is not None and self.ntry >= self.max_try:
-                        SlTrace.lg("Giving up looking for closed tour after {:d} tries". format(self.ntry))
+                        SlTrace.lg(f"Giving up looking for closed tour after {self.ntry:d} tries")
                         return True
                     
-                    
-                    del self.path_stack[-1]         # Not a closed tour
+                    ###self.backup_move()
+                    self.widen_search()
                     continue                        # look again
                 else:
                     return True
         
-            next_move, board, best_moves = self.path_stack[-1]
-            if best_moves is None:
-                best_moves = self.get_best_moves(board, next_move)
-            if len(best_moves) == 0:
-                self.ntry += 1
-                if SlTrace.trace("no_more_moves"):
-                    SlTrace.lg("{:d}: No more moves at {} len_stk={:d}"
-                               .format(self.ntry, loc2desc(next_move), len_stk))
-                if self.max_try is not None and self.ntry > self.max_try:
-                    SlTrace.lg("Giving up this search")
-                    return True
-                
-                if SlTrace.trace("no_more_moves"):
-                    self.display_stack_path("no_more_moves")
-                self.nbackup += 1
-                if (self.last_complete_path is None
-                        or len(self.path_stack) > len(self.last_complete_path)):
-                    self.last_complete_path = self.path_stack_path()
-                del self.path_stack[-1]
-                if len(self.path_stack) <= self.track_level:
-                    self.track_level = len(self.path_stack)
-                    if SlTrace.trace("back_off_trace"):
-                        if self.track_level > 0:
-                            nxt_move, board, bst_moves = self.path_stack[-1]
-                            self.board = board
-                            SlTrace.lg("back_off_trace stk_len={:d} start={} at {} best_moves={}"
-                                   .format(self.track_level, loc2desc(self.loc_start),
-                                           loc2desc(nxt_move), path_desc(bst_moves)))
-                            self.display_stack_path("back_off_trace")
-                continue                            # Backup one
+            if self.path_stack is None or len(self.path_stack) == 0:
+                raise SelectError("empty self.path_stack")
             
-            follow_move = best_moves.pop(0)
-            self.path_stack[-1] = (next_move, board, best_moves)
-            new_board = ChessBoard(base_board=board)
-            new_board.set_piece('N', follow_move)
-            self.path_stack.append((follow_move, new_board, None))
-            if SlTrace.trace("stack_grow"):
-                SlTrace.lg("stk_len:{:d} at {}"
-                        .format(len(self.path_stack), loc2desc(follow_move)))
-            continue
+            if self.operator_action_check():
+                continue
+            if self.next_move():
+                return True                         # End of path search
+    
+            # Continue search
+
+    def next_move(self):
+        """ Execute the next (currenly set) move, updating the path stack
+        and displaying move if appropriate
+        :returns: True iff at end of path search
+        """                
+        stke = self.path_stack[-1]
+        next_move = stke.loc
+        board = stke.board
+        best_moves = stke.best_moves
+        SlTrace.lg(f"best_moves = {best_moves}", "stack_build")
+        if best_moves is None:
+            SlTrace.lg(f"best_moves tested is None", "stack_build")
+            best_moves = self.get_best_moves(board, next_move)
+            SlTrace.lg(f"best_moves = {best_moves}", "stack_build")
+            SlTrace.lg(f"len(best_moves)={len(best_moves)}", "stack_build")
+        if len(best_moves) == 0:
+            SlTrace.lg("tested as 0", "stack_build")
+            self.ntry += 1
+            if SlTrace.trace("no_more_moves"):
+                SlTrace.lg("{:d}: No more moves at {} len_stk={:d}"
+                           .format(self.ntry, loc2desc(next_move), len_stk))
+            if self.max_try is not None and self.ntry > self.max_try:
+                SlTrace.lg("Giving up this search")
+                return True
+            
+            if SlTrace.trace("no_more_moves"):
+                self.display_stack_path("no_more_moves")
+            if (self.last_complete_path is None
+                    or len(self.path_stack) > len(self.last_complete_path)):
+                self.last_complete_path = self.path_stack_path()
+            if len(self.path_stack) <= self.track_level:
+                self.track_level = len(self.path_stack)
+                if SlTrace.trace("back_off_trace"):
+                    if self.track_level > 0:
+                        stke = self.path_stack[-1]
+                        nxt_move, board, bst_moves = stke.loc, stke.board, stke.best_moves
+                        self.board = board
+                        SlTrace.lg("back_off_trace stk_len={:d} start={} at {} best_moves={}"
+                               .format(self.track_level, loc2desc(self.loc_start),
+                                       loc2desc(nxt_move), path_desc(bst_moves)))
+                        self.display_stack_path("back_off_trace")
+            self.widen_search()
+            return False                            # Backup
+        else:
+            SlTrace.lg(f"len(best_moves)={len(best_moves)} failed test for 0", "stack_build")
+        
+        follow_move = best_moves.pop(0)
+        stke = self.path_stack[-1]
+        stke.best_moves = best_moves            # Update best moves
+        new_board = ChessBoard(base_board=board)
+        self.make_move(loc=follow_move, board=new_board)
+        return False
 
     def time_check(self):
         """ Check for timeout
@@ -170,6 +247,107 @@ class KnightsPaths:
             raise SelectTimeout
 
 
+    def destroy(self):
+        if self.is_display_move and self.display_board is not None:
+            self.display_board.destroy()
+            self.display_board = None
+
+    def display_move_setup(self):
+        """ Setup for move display
+        """
+        self.display_board = ChessBoardDisplay(x=600,y=100, width=600, height=600,
+                                               nrows=self.nrows, ncols=self.ncols,
+                                               move_time=self.move_time)
+
+    def make_move(self, piece=None, loc=None, board=None):
+        """ Make top level (visible) move
+        :piece: algebraic move default: 'N'
+        :loc: location /square
+        :board: board default self.board
+        """
+        self.nmove += 1
+        if piece is None:
+            piece = 'N'
+        if board is None:
+            board = self.board
+        self.board = board                  # Update board
+        if self.path_stack is None:
+            self.path_stack = []
+        self.path_stack.append(PathStackEntry(loc=loc, board=self.board))
+        if SlTrace.trace("stack_grow"):
+            SlTrace.lg(f"stk_len:{len(self.path_stack):d} at {loc2desc(loc)}")
+        board.set_piece(piece, loc)
+        if self.is_display_move:
+            self.display_move()
+ 
+    def display_move(self):
+        """ Display current move on the path stack
+        """
+        move_no = len(self.path_stack)   # Use stack len as move number
+        if move_no == 0:
+            return                  # Nothing to display
+
+        dboard = self.display_board # Display board
+        stke = self.path_stack[-1]
+        dboard.update_display()
+        piece = stke.piece
+        if piece is None:
+            piece = "N"
+        prev_loc = None
+        if  move_no > 1:
+            prev_loc = self.path_stack[-2].loc
+        loc = stke.loc
+        if not dboard.is_empty(loc):            # Indicate if square occupied
+            sq = dboard.get_square(loc)
+            dboard.draw_outline(sq, color="pink", width=4)
+            return
+        
+        dboard.set_piece(piece, loc=loc)
+        sq_w, sq_h = dboard.get_square_size()
+        text_w = text_h = None          # default use default
+        if sq_w != 0 and sq_h != 0:
+            text_w = sq_w*2
+            text_h = sq_h*2
+        dboard.add_centered_text(loc, text=ChessPiece.desc(piece),
+                          color="black", width=text_w, height=text_h,
+                          font_name="Helvetica24")
+        dboard.add_centered_text(loc, text=f" {move_no}", x=15, y=15)
+        if move_no == 1:
+            sq = dboard.get_square(loc)
+            sq.draw_outline(color="green", width=4)
+            self.display_first_loc = loc
+        elif move_no == self.nrows*self.ncols:
+            sq = dboard.get_square(loc)
+            sq.draw_outline(color="red", width=4)
+            if self.is_neighbor(loc, self.display_first_loc):
+                dboard.display_connected_moves(loc=self.display_first_loc,
+                                               prev_loc=loc,
+                                               color= "blue", width=4, leave=True)
+        connect_tags = []
+        if prev_loc is not None:
+            connect_tags = dboard.display_connected_moves(loc=loc, prev_loc=prev_loc)
+        stke.display_info = PathStackEntryDisplayInfo(connect_tags=connect_tags)
+        dboard.wm.after(int(1000*self.move_time))
+        dboard.update_display()
+
+    def undisplay_move(self):
+        """ Remove previous displayed move
+        """
+        if len(self.path_stack) == 0:
+            return
+        
+        stke = self.path_stack[-1]
+        dboard = self.display_board
+        loc = stke.loc
+        connect_tags = []
+        if stke.display_info is not None:
+            connect_tags = stke.display_info.connect_tags
+        sq = dboard.get_square(loc)
+        sq.display_clear()
+        dboard.clear_display_canvas(connect_tags)
+        dboard.board.squares[loc[0]][loc[1]] = ""
+        dboard.wm.after(int(1000*self.move_time))
+        dboard.update_display()
 
     def display_stack_path(self, desc=None):
         """ Display current path on stack
@@ -180,6 +358,64 @@ class KnightsPaths:
         path = self.path_stack_path()
         ChessBoardDisplay.display_path(desc, path) 
 
+
+    def operator_action_check(self):
+        """ Check if operator action occurred
+        since last operator action
+        """
+        if not self.is_display_move:
+            return False            # No operator checking if no display move
+        
+        pW = self.pW
+        if pW is None:
+            return False
+        
+        self.update_display()
+        pW.update_display()
+        if pW.is_step:
+            pW.is_step = False
+            pW.is_pause = True
+            return True
+        
+        if pW.is_pause:
+            return True
+        
+        return False
+        
+        
+    def move_check(self):
+        """ Check for move progress / pause, step, continue
+        Only in effect for display_move
+        :returns: True if action was taken and current move should be ignored
+        """
+        if not self.is_display_move:
+            return False
+        
+        was_paused = self.paused()
+        while self.paused():
+            self.update_display()
+            self.display_board.wm.after(100)
+
+        if self.steped():
+            self.pW.is_pause = True     # Reset paused
+        if was_paused:
+            SlTrace.lg("after pause")
+        
+    def paused(self):
+        pW = self.pW
+        if pW is not None and pW.is_pause:
+            return True
+        
+        return False
+
+
+    def steped(self):
+        pW = self.pW
+        if pW is not None and pW.is_step:
+            return True
+        
+        return False
+    
 
     def display_stack(self, desc=None, nent=None, display_board=False):
         """ Display current stack
@@ -210,9 +446,15 @@ class KnightsPaths:
     
     def get_best_moves(self, board, loc):
         """ Retrieve an ordered list of best moves for piece at loc
+        if max_lookahead == -1 ==> just give all legal knight moves
         :board: chess board
         :loc: piece location
         """
+        
+        if self.max_look_ahead == -1:
+            ktmoves = board.get_knight_moves(loc, only_empty=True)
+            return ktmoves
+        
         ktmoves = board.get_knight_moves(loc)
         best_moves = self.order_moves_by_warnsdorff(board, ktmoves)
         if SlTrace.trace("best_moves"):
@@ -228,6 +470,11 @@ class KnightsPaths:
         """ Get number of backups (not including non-tour complete paths)
         """
         return self.nbackup
+
+    def get_nmove(self):
+        """ Get number of moves (not including non-tour complete paths)
+        """
+        return self.nmove
 
     def get_track_level(self):
         """ Get minimum backup stack level
@@ -258,7 +505,7 @@ class KnightsPaths:
         :returns: path,if one, else None
         """
         path = self.path_stack_path()
-        del self.path_stack[-1]
+        self.backup_move()
         return path
 
     def path_stack_path(self):
@@ -266,7 +513,7 @@ class KnightsPaths:
         """
         path = []
         for se in self.path_stack:
-            path.append(se[0])
+            path.append(se.loc)
         return path
     
                    
@@ -281,11 +528,14 @@ class KnightsPaths:
             if not self.build_path_stack():
                 return None
             
-            path = self.pop_path_stack()
+            path = self.path_stack_path()
             return path
                 
         except SelectTimeout:
-            SlTrace.lg(f"path find timeout({self.time_limit:.3f} sec)")
+            t = self.time_limit
+            if t is None:
+                t = -1
+            SlTrace.lg(f"path find timeout({t:.3f} sec)")
             return None
 
         except BaseException:
@@ -616,13 +866,66 @@ class KnightsPaths:
                     ChessBoardDisplay.display_path(desc, path, ncols=self.ncols, nrows=self.nrows)
 
 
-    def get_knight_moves(self, loc=None, board=None):
+    def get_knight_moves(self, loc=None, board=None, only_empty=False):
         """ Get legal moves for given piece, from loc
         :loc: location str or tuple
         :board: playing board, default: current board
+        :only_empty: only consider empty squares default: consider all squares
         :returns: list of tuples for legal moves
         """
         if board is None:
             board = self.board
-        return board.get_knight_moves(loc=loc)
+        return board.get_knight_moves(loc=loc, only_empty=only_empty)
 
+    def backup_move(self, keep_move=False):
+        """ Backup to previous move
+        :keep_move: keep current move for make_move
+                default: False == discard move
+        """
+        if SlTrace.trace("backup_move"):
+            if len(self.path_stack) > 0:
+                st = self.path_stack[-1]
+                SlTrace.lg(f"backup_move {len(self.path_stack)} {loc2desc(st.loc)} ")
+        if len(self.path_stack) > 0:
+            if self.is_display_move:
+                self.undisplay_move()       # Update display before move removal
+            ste = self.path_stack[-1]
+            board = ste.board
+            loc = ste.loc
+            board.clear_loc(loc)
+            if keep_move:
+                if len(self.path_stack) > 1:
+                    self.path_stack[-2].best_moves.insert(0, loc)
+                else:
+                    self.nbackup += 1
+            del self.path_stack[-1]
+        if self.is_display_move and keep_move:
+            SlTrace.lg("after backup_move")
+
+    def widen_search(self, open_candidate=False):
+        """ Do a little "breath-first" by looking at a new choice at top
+        of stack
+        """
+        if open_candidate:   # Retrack if looking for closed_tour and no candidates open
+            no_empty_candidate = True
+            while no_empty_candidate:             # Backup till possible candidate end square is open
+                for loc in self.candidate_end_moves:
+                    if self.is_empty(loc):
+                        no_empty_candidate = False
+                        break
+                self.backup_move()
+                if len(self.path_stack) == 0:        # Limit if at top
+                    break
+            return
+        
+        if self.nbackup < self.backup_limit:
+            self.backup_move()
+            return
+        
+        SlTrace.lg("Widen search")
+        while len(self.path_stack) > 1:
+            self.backup_move()
+        self.nbackup = 0
+        
+    def update_display(self):
+        self.display_board.update_display()
