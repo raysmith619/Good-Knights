@@ -32,7 +32,8 @@ class DisplayedPath:
         if org_no is None:
             if DisplayedPath.org_no is None:
                 DisplayedPath.org_no = 0
-            org_no = DisplayedPath.org_no + 1
+            DisplayedPath.org_no += 1
+            org_no = DisplayedPath.org_no
         self.org_no = org_no
         self.desc = desc
         self.time = time
@@ -77,8 +78,8 @@ class DisplayedPath:
         """
         SlTrace.lg(f"recreate display: {ChessBoard.path_desc(self.path)}")
         disp_board = ChessBoardDisplay.display_path(self.path,
-                     desc=self.disp_board.desc, nrows=self.disp_board.nrows,
-                     ncols=self.disp_board.ncols,
+                     desc=self.disp_board.desc, nrow=self.disp_board.nrow,
+                     ncol=self.disp_board.ncol,
                      width=self.disp_board.width, height=self.disp_board.height)
         self.disp_board = disp_board
         self.path = disp_board.path
@@ -102,8 +103,8 @@ class DisplayedPath:
             y = disp_y
         if width != disp_width or height != disp_height:
             disp_board = ChessBoardDisplay.display_path(self.path,
-                         desc=self.disp_board.desc, nrows=self.disp_board.nrows,
-                         ncols=self.disp_board.ncols,
+                         desc=self.disp_board.desc, nrow=self.disp_board.nrow,
+                         ncol=self.disp_board.ncol,
                          width=width, height=height)
             if self.disp_board is not None:
                 self.disp_board.destroy()

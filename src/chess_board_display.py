@@ -9,9 +9,6 @@ from select_dots import SelectDots
 from select_trace import SlTrace
 from select_error import SelectError
 
-loc2desc = ChessBoard.loc2desc 
-loc2tuple = ChessBoard.loc2tuple 
-
 class Piece(Enum):
     P = 1
     N = 2
@@ -42,15 +39,15 @@ Separated from board so board operations, can
 be optimized for speed.
 """
 class ChessBoardDisplay:
-    ncols = 8
-    nrows = 8
+    ncol = 8
+    nrow = 8
     tracking_path = []
     track_all_path = False
     board_picts_wm = []
 
     @classmethod
     def display_path(cls, path,
-                     desc=None, nrows=8, ncols=8,
+                     desc=None, nrow=8, ncol=8,
                      width=400, height=400):
         """ Display board with path squares labeled
         :desc: text description
@@ -68,16 +65,16 @@ class ChessBoardDisplay:
         wm.title(desc) 
         
         #creation of an instance
-        cb = ChessBoard(nrows=nrows, ncols=ncols)
+        cb = ChessBoard(nrow=nrow, ncol=ncol)
         cbd = ChessBoardDisplay(wm=wm, frame=frame, board=cb, path=path,
                                 desc=desc,
-                                width=width, height=height, nrows=nrows, ncols=ncols)
+                                width=width, height=height, nrow=nrow, ncol=ncol)
         if path is None:
             SlTrace.lg("No path")
             return
             
         for loc in path:
-            loc = loc2tuple(loc)
+            loc = cb.loc2tuple(loc)
             cbd.label_square(loc)
         cbd.display()
         wd = 7
@@ -96,7 +93,7 @@ class ChessBoardDisplay:
             cbd.draw_line(p1,p2, color="blue", width=wd)
         prev_loc = None
         for loc in path:
-            loc = loc2tuple(loc)
+            loc = cb.loc2tuple(loc)
             if prev_loc is not None:
                 cbd.display_connected_moves(loc, prev_loc)
             prev_loc = loc
@@ -140,8 +137,8 @@ class ChessBoardDisplay:
                 board=None,
                 move_time = .5,
                 path=None,
-                nrows=8,
-                ncols=8,
+                nrow=8,
+                ncol=8,
                 ):
         """ Set up board display
         :frame: if one
@@ -153,21 +150,22 @@ class ChessBoardDisplay:
         :height: board height default: 400 pixels
         :board: ChessBoard default: created
         :path: path to display
-        :nrows: number of rows default: 8
-        :ncols: number of columns default: 8
+        :nrow: number of rows default: 8
+        :ncol: number of columns default: 8
         """
         self.label_number = 0               # Number for default square labeling
         self.desc = desc
         if board is None:
-            board = ChessBoard(nrows=nrows, ncols=ncols)
-            nrows = board.nrows             # Inherit from board
-            ncols = board.ncols
+            board = ChessBoard(nrow=nrow, ncol=ncol)
         self.path = path                    # Path, if associated, may be placed here
         self.board = board    
         self.width = width
         self.height = height
-        self.nrows = nrows
-        self.ncols = ncols
+        if board is not None:
+            nrow = board.nrow
+            ncol = board.ncol
+        self.nrow = nrow
+        self.ncol = ncol
         if wm is None:
             wm = Tk()
         self.wm = wm
@@ -182,22 +180,20 @@ class ChessBoardDisplay:
             frame.pack(fill=BOTH, expand=YES)
         self.frame = frame
         select_dots = self.create_board(frame, wm, width=width, height=height,
-                          nrows=nrows, ncols=ncols)
+                          nrow=nrow, ncol=ncol)
         self.select_dots = select_dots
-        self.nrows = select_dots.nrows      # Local copies
-        self.ncols = select_dots.ncols
         self.prev_loc = None                # previous move location for path viewing
         self.move_time = move_time
         self.display_move_stack = []        # (loc, line)
         self.display_move_no = 0
         
     def create_board(self, frame=None, wm=None,
-                     nrows=None, ncols=None,
+                     nrow=None, ncol=None,
                      width=None, height=None):
         
         select_dots = SelectDots(frame, wm,
                         width=width, height=height,     # REQUIRED, if window not expanded
-                        nrows=nrows, ncols=ncols,
+                        nrows=nrow, ncols=ncol,
                         region_visible=True,
                         region_width=1,
                         do_corners=False,               # We do it here
@@ -226,7 +222,7 @@ class ChessBoardDisplay:
             
     def resize(self, width=None, height=None):
         select_dots = self.create_board(self.frame, self.wm, width=width, height=height,
-                                         nrows=self.nrows, ncols=self.ncols)
+                                         nrow=self.nrow, ncol=self.ncol)
         if hasattr(self, "select_dots") and self.select_dots is not None:
             self.select_dots.destroy()    
         self.select_dots = select_dots
@@ -268,7 +264,7 @@ class ChessBoardDisplay:
                 leave_color = "red"
             l2 = self.select_dots.draw_line(p1, leave_p, color=leave_color, width=2, arrow=LAST)
             ls.append(l2)
-            return ls
+        return ls
  
     def draw_outline(self, sq, color=None, width=None):
         self.select_dots.draw_outline(sq=sq, color=color, width=width)
@@ -278,7 +274,7 @@ class ChessBoardDisplay:
             (0,0) if no squares
             ASSUMES vertical allignment
         """
-        if self.ncols == 0 or self.nrows == 0:
+        if self.ncol == 0 or self.nrow == 0:
             return (0,0)
         
         sq = self.get_square((0,0))
@@ -299,7 +295,7 @@ class ChessBoardDisplay:
                 if tuple - (file index (0-7 for a-h, row index 0-7 for 1-8))
         :returns: square (SelectRegion or subclass)
         """
-        col_index, row_index = loc2tuple(loc)
+        col_index, row_index = self.loc2tuple(loc)
         dot_row = self.select_dots.nrows - row_index
         dot_col = col_index + 1
         part = self.select_dots.get_part(type='region', row=dot_row, col=dot_col)
@@ -311,7 +307,7 @@ class ChessBoardDisplay:
         :loc: location
         :label: text to place in square default: number
         """
-        loc = loc2tuple(loc)
+        loc = self.loc2tuple(loc)
         ci, ri = loc[0], loc[1]
         sq = self.get_square((ci,ri))
         if label is None:
@@ -346,8 +342,8 @@ class ChessBoardDisplay:
         if not self.is_empty(loc):
             raise SelectError("Tried to place {} in nonempty square {}"
                              .format(piece, self.loc2desc(loc))) 
-           
-        self.board.squares[loc[0]][loc[1]] = pstr
+        ic,ir = loc[0],loc[1]
+        self.board.squares[ir][ic] = pstr
         self.board.nempty -= 1        
 
 
@@ -355,10 +351,20 @@ class ChessBoardDisplay:
         """ Check if square is empty (unoccupied)
         """
         loc = self.loc2tuple(loc)
-        if self.board.squares[loc[0]][loc[1]] == "":
+        ic = loc[0]
+        ir = loc[1]
+        if self.board.squares[ir][ic] == "":
             return True
         
         return False
+    def set_empty(self, loc):
+        """ Set as empty
+        :loc: square on board
+        """
+        loc = self.loc2tuple(loc)
+        ic = loc[0]
+        ir = loc[1]
+        self.board.squares[ir][ic] = ""
         
 
     def get_square_loc(self, sq=None, let=True):
@@ -370,7 +376,7 @@ class ChessBoardDisplay:
         """
         dot_row = sq.get_row()
         dot_col = sq.get_col()
-        row_index = self.select_dots.nrows - dot_row
+        row_index = self.select_dots.nrow - dot_row
         col_index = dot_col - 1
         
         if let:
@@ -383,7 +389,8 @@ class ChessBoardDisplay:
         :loc: location
         """
         loc = self.loc2tuple(loc)
-        return self.board.squares[loc[0]][loc[1]]
+        ic,ir = loc[0],loc[1]
+        return self.board.squares[ir][ic]
 
     def display_connected_moves(self, loc=None, prev_loc=None, color=None,
                                 width=None, leave=None, leave_color=None):
@@ -449,7 +456,8 @@ class ChessBoardDisplay:
             sq = self.get_square(loc)
             sq.display_clear()
             self.clear_display_canvas(connect_tags)
-            self.board.squares[loc[0]][loc[1]] = ""
+            ic,ir = loc[0],loc[1]
+            self.board.squares[ir][ic] = ""
             self.board.nempty += 1
             if len(self.display_move_stack) > 0 and len(self.display_move_stack[-1]) > 2:
                 self.display_move_no = self.display_move_stack[-1][2]       
@@ -490,7 +498,7 @@ class ChessBoardDisplay:
         
         wm.update_idletasks()
         wm.update()
-
+     
 display_path = ChessBoardDisplay.display_path
 
 #########################################################################

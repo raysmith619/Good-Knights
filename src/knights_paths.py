@@ -73,14 +73,14 @@ class KnightsPaths:
                  display_move=False,
                  pW=None,
                  move_time=.5,
-                 nrows=None, ncols=None,
+                 nrow=None, ncol=None,
                  max_look_ahead=5):
         """ Setup for kight path generation
         Via depth-first search of night moves which traverse board without revisiting any square.
         
         :board: Current chess board, default: generate empty board
-        :nrows: number of rows if board not present
-        :ncols: number of cols if board not present
+        :nrow: number of rows if board not present
+        :ncol: number of cols if board not present
         :loc: starting knight position                
         :closed_tours: return only closed tours
         :max_look_ahead: maximum number of moves to look ahead in best move determination
@@ -103,24 +103,27 @@ class KnightsPaths:
         self.time_begin = datetime.datetime.now()
         self.move_time = move_time
         if board is None:
-            board = ChessBoard(ncols=ncols, nrows=nrows)
+            board = ChessBoard(ncol=ncol, nrow=nrow)
         self.board = board
-        self.ncols = board.ncols
-        self.nrows = board.nrows
-        self.len_ckt = self.ncols*self.nrows
+        self.ncol = board.ncol
+        self.nrow = board.nrow
+        self.len_ckt = self.ncol*self.nrow
         self.display_board = None       # Board displaying moves during run
         if self.is_display_move:
             self.display_move_setup()
             time_limit = 99999
         elif time_limit is None:
             time_limit = 1.0
+        else:
+            time_limit = float(time_limit)
         self.time_limit = time_limit
         self.time_end = self.time_begin + datetime.timedelta(seconds=time_limit)
         self.loc_start = loc
         self.closed_tours = closed_tours
         self.candidate_end_moves = self.get_knight_moves(loc)       # Possible end moves for closed tour
+        self.nprune_closed = 0              # count pruning
         self.make_move('N', self.loc_start)
-        self.track_level = self.ncols*self.nrows
+        self.track_level = self.len_ckt
         self.ncomplete_path = 0     # Number of paths found
         self.nbackup = 0           # Number of backups, not including non-tour paths
         self.ntrack_ntie = 0
@@ -129,6 +132,11 @@ class KnightsPaths:
         self.is_complete_tour = False
         self.is_closed_tour = False
         self.backup_limit = backup_limit
+        self.nprune_closed = 0
+        self.widen_level = 1            # Level to backup for widening
+        self.is_change_tour = False        # Short circuit operation
+        self.is_stop_gen = False           # Short circuit operation
+        self.display_first_loc = loc
               
     ###@timeout(time_limit)
     def build_path_stack(self):
@@ -171,26 +179,39 @@ class KnightsPaths:
                         return True
                     
                     ###self.backup_move()
+                    if self.is_stop_gen or self.is_change_tour:
+                        break                       # Short circuit
                     self.widen_search()
                     continue                        # look again
                 else:
                     return True
         
-            if self.path_stack is None or len(self.path_stack) == 0:
-                raise SelectError("empty self.path_stack")
+            ###if self.path_stack is None or len(self.path_stack) == 0:
+            ###    raise SelectError("empty self.path_stack")
             
             if self.operator_action_check():
+                if self.is_change_tour:
+                    return False
+                
+                if self.is_stop_gen:
+                    return False
+                
                 continue
+            
             if self.next_move():
                 return True                         # End of path search
     
             # Continue search
-
+        return False                                # Short circuit
+    
+    
     def next_move(self):
         """ Execute the next (currenly set) move, updating the path stack
         and displaying move if appropriate
         :returns: True iff at end of path search
-        """                
+        """
+        if self.closed_tours:
+            self.prune_not_closed()                
         stke = self.path_stack[-1]
         next_move = stke.loc
         board = stke.board
@@ -245,8 +266,7 @@ class KnightsPaths:
         now = datetime.datetime.now()
         if now > self.time_end:
             raise SelectTimeout
-
-
+                
     def destroy(self):
         if self.is_display_move and self.display_board is not None:
             self.display_board.destroy()
@@ -256,9 +276,40 @@ class KnightsPaths:
         """ Setup for move display
         """
         self.display_board = ChessBoardDisplay(x=600,y=100, width=600, height=600,
-                                               nrows=self.nrows, ncols=self.ncols,
+                                               board=self.board,
                                                move_time=self.move_time)
 
+    def prune_not_closed(self):
+        """ Back up if no closed tour is possible with
+        current path_stack.  There can be no closed tour possible
+        if the path stack length is at less than the circuit length
+        (self.len_ckt) and there is no empty square one knight's
+        move away (self.candidate_end_moves) from the starting
+        square(self.start_loc).
+        """
+        if len(self.path_stack) == self.len_ckt:
+            return          # Might be done
+        
+        if self.has_candidate_moves():
+            return
+            
+        self.nprune_closed += 1              # count pruning
+        while len(self.path_stack) > 1:
+            self.backup_move()
+            if self.has_candidate_moves():
+                break
+            
+    
+    def has_candidate_moves(self):
+        """ Test if any empty candidate end squares for closed tour
+        """
+        for loc in self.candidate_end_moves:
+            if self.is_empty(loc):
+                return True      # At least empty candidate
+        
+        return False
+                
+        
     def make_move(self, piece=None, loc=None, board=None):
         """ Make top level (visible) move
         :piece: algebraic move default: 'N'
@@ -299,8 +350,9 @@ class KnightsPaths:
         loc = stke.loc
         if not dboard.is_empty(loc):            # Indicate if square occupied
             sq = dboard.get_square(loc)
+            dboard.set_empty(loc)                   # HACK to continue TFD
             dboard.draw_outline(sq, color="pink", width=4)
-            return
+            ### return                            ### HACK to continue
         
         dboard.set_piece(piece, loc=loc)
         sq_w, sq_h = dboard.get_square_size()
@@ -316,7 +368,7 @@ class KnightsPaths:
             sq = dboard.get_square(loc)
             sq.draw_outline(color="green", width=4)
             self.display_first_loc = loc
-        elif move_no == self.nrows*self.ncols:
+        elif move_no == self.nrow*self.ncol:
             sq = dboard.get_square(loc)
             sq.draw_outline(color="red", width=4)
             if self.is_neighbor(loc, self.display_first_loc):
@@ -325,7 +377,7 @@ class KnightsPaths:
                                                color= "blue", width=4, leave=True)
         connect_tags = []
         if prev_loc is not None:
-            connect_tags = dboard.display_connected_moves(loc=loc, prev_loc=prev_loc)
+            connect_tags = dboard.display_connected_moves(loc=loc, prev_loc=prev_loc, leave=True)
         stke.display_info = PathStackEntryDisplayInfo(connect_tags=connect_tags)
         dboard.wm.after(int(1000*self.move_time))
         dboard.update_display()
@@ -345,7 +397,8 @@ class KnightsPaths:
         sq = dboard.get_square(loc)
         sq.display_clear()
         dboard.clear_display_canvas(connect_tags)
-        dboard.board.squares[loc[0]][loc[1]] = ""
+        ic,ir = loc[0],loc[1]
+        dboard.board.squares[ir][ic] = ""
         dboard.wm.after(int(1000*self.move_time))
         dboard.update_display()
 
@@ -365,6 +418,9 @@ class KnightsPaths:
         """
         if not self.is_display_move:
             return False            # No operator checking if no display move
+        
+        if self.is_change_tour or self.is_stop_gen:
+            return True             # Short-circuit operation
         
         pW = self.pW
         if pW is None:
@@ -519,7 +575,7 @@ class KnightsPaths:
                    
     def next_path(self):
         """ Get next path
-        1. if necessary, build path to nrows*ncols depth
+        1. if necessary, build path to nrow*ncol depth
         2. get list of moves from stack
         
         :returns: next path, None if none
@@ -862,8 +918,8 @@ class KnightsPaths:
             if self.display_path_board:
                 self.mw.update_idletasks()
                 self.mw.update()
-                if len(path) >= self.ncols*self.nrows-4:
-                    ChessBoardDisplay.display_path(desc, path, ncols=self.ncols, nrows=self.nrows)
+                if len(path) >= self.len_ckt-4:
+                    ChessBoardDisplay.display_path(desc, path, ncol=self.ncol, nrow=self.nrow)
 
 
     def get_knight_moves(self, loc=None, board=None, only_empty=False):
@@ -886,7 +942,7 @@ class KnightsPaths:
             if len(self.path_stack) > 0:
                 st = self.path_stack[-1]
                 SlTrace.lg(f"backup_move {len(self.path_stack)} {loc2desc(st.loc)} ")
-        if len(self.path_stack) > 0:
+        if len(self.path_stack) > 1:        # Don't allow backingup before first move
             if self.is_display_move:
                 self.undisplay_move()       # Update display before move removal
             ste = self.path_stack[-1]
@@ -902,30 +958,20 @@ class KnightsPaths:
         if self.is_display_move and keep_move:
             SlTrace.lg("after backup_move")
 
-    def widen_search(self, open_candidate=False):
+    def widen_search(self):
         """ Do a little "breath-first" by looking at a new choice at top
         of stack
         """
-        if open_candidate:   # Retrack if looking for closed_tour and no candidates open
-            no_empty_candidate = True
-            while no_empty_candidate:             # Backup till possible candidate end square is open
-                for loc in self.candidate_end_moves:
-                    if self.is_empty(loc):
-                        no_empty_candidate = False
-                        break
-                self.backup_move()
-                if len(self.path_stack) == 0:        # Limit if at top
-                    break
-            return
-        
         if self.nbackup < self.backup_limit:
             self.backup_move()
             return
         
-        SlTrace.lg("Widen search")
-        while len(self.path_stack) > 1:
+        SlTrace.lg("widen search")
+        while len(self.path_stack) > self.widen_level:
             self.backup_move()
         self.nbackup = 0
+        self.widen_level += 1
+        SlTrace.lg(f"widen_level:{self.widen_level}")
         
     def update_display(self):
         self.display_board.update_display()

@@ -5,21 +5,12 @@ Path Display and Arrangement window
 from tkinter import *
 
 from select_error import SelectError
+from select_trace import SlTrace
+from select_control import SelectControl
+
 from chess_board import ChessBoard
 
 class PathsWindow(Frame):
-    COL_SEP = 0
-    COL_ARR = COL_SEP+1
-    COL_SORT = COL_ARR+1
-    COL_SELECT = COL_SORT+1  # Centered
-    COL_FIRST = COL_SORT+1
-    COL_WRAP = COL_FIRST+1
-    COL_LAST = COL_WRAP+1
-    
-    COL_SIZE_LABEL = 0
-    COL_SIZE = COL_SIZE_LABEL+1
-
-    
     ARR_TILE = 1
     ARR_LAYER = 2
     ARR_STACK = 3
@@ -32,14 +23,16 @@ class PathsWindow(Frame):
     def __init__(self, wm=None, arrange_call=None,
                   run_call=None, pause_call=None, continue_call=None,
                   step_call=None, back_call=None, stop_call=None):
+        global cF
+        
         if wm is None:
             wm = Tk()
         self.wm = wm
-        height = 350
+        height = 450
         width = 400
         xpos = 600
         ypos = 50
-        self.wm.bind ( "<Enter>", self.enter_cmd)
+        self.wm.bind ( "<Return>", self.enter_cmd)
         geo = f"{width}x{height}+{xpos}+{ypos}"     # NO SPACES PERMITTED
         wm.geometry(geo)
         self.arrange_call = arrange_call
@@ -54,120 +47,161 @@ class PathsWindow(Frame):
         self.is_pause = False               # Paused
         self.is_step = False                # Step pressed
         self.is_action = False              # True ==> pending action
+        self.paths_gen = None               # Set to control link
+        cF = SelectControl()
         
-        Label(wm, text="Path Arrangement").grid(row=0, column=2)
-        Label(wm, text="Arrangement").grid(row=3, column=self.COL_ARR)
-        Label(wm, text="sorted by").grid(row=3, column=self.COL_SORT)
-        Label(wm, text="Select").grid(row=2, column=self.COL_SELECT, columnspan=3)
-        Label(wm, text="first").grid(row=3,column=self.COL_FIRST)
-        Label(wm, text="wrap").grid(row=3, column=self.COL_WRAP)
-        Label(wm, text="last").grid(row=3, column=self.COL_LAST)
+        ROW_TITLE = 0
+        
+        Label(wm, text="Path Arrangement").grid(row=ROW_TITLE, column=2)
+        
+        ROW_UNDO_REDO = ROW_TITLE+1
+        Label(wm, text="").grid(row=ROW_UNDO_REDO)
+        ROW_UNDO_BUTTON = ROW_UNDO_REDO+1
+        COL_UNDO_BUTTON = 0
+        ROW_REDO_BUTTON = ROW_UNDO_BUTTON        
+        COL_REDO_BUTTON = COL_UNDO_BUTTON+1
+        Button(wm, text="UNDO\nsettings", command=self.undo_settings).grid(
+                row=ROW_UNDO_BUTTON, column=COL_UNDO_BUTTON)
+        Button(wm, text="REDO\nsettings", command=self.redo_settings).grid(
+                row=ROW_REDO_BUTTON, column=COL_REDO_BUTTON)
+        
+        ROW_ARR = ROW_UNDO_BUTTON+1
+        ROW_ARR_SELECT = ROW_ARR-1
+        
+        COL_ARR = 0
+        COL_SORT = COL_ARR+1
+        COL_SELECT = COL_SORT+1  # Centered
+        COL_FIRST = COL_SORT+1
+        COL_WRAP = COL_FIRST+1
+        COL_LAST = COL_WRAP+1
+        
+        COL_SIZE_LABEL = 0
+        COL_SIZE = COL_SIZE_LABEL+1
+    
+        
+        
+        
+        Label(wm, text="Arrangement").grid(row=ROW_ARR, column=COL_ARR)
+        Label(wm, text="sorted by").grid(row=ROW_ARR, column=COL_SORT)
+        Label(wm, text="Select").grid(row=ROW_ARR_SELECT, column=COL_SELECT, columnspan=3, sticky=S)
+        Label(wm, text="first").grid(row=ROW_ARR,column=COL_FIRST)
+        Label(wm, text="wrap").grid(row=ROW_ARR, column=COL_WRAP)
+        Label(wm, text="last").grid(row=ROW_ARR, column=COL_LAST)
 
-        self.iv_arr = IntVar()
-        Radiobutton(wm, text="tile", variable=self.iv_arr, value=self.ARR_TILE).grid(row=11, column=self.COL_ARR)
-        Radiobutton(wm, text="layer", variable=self.iv_arr, value=self.ARR_LAYER).grid(row=12, column=self.COL_ARR)
-        Radiobutton(wm, text="stack", variable=self.iv_arr, value=self.ARR_STACK).grid(row=13, column=self.COL_ARR)
-        self.iv_arr.set(self.ARR_TILE)
+        cF.make_val("arr", self.ARR_TILE)
+        Radiobutton(wm, text="tile", variable=cF.get_var("arr"), value=self.ARR_TILE).grid(row=11, column=COL_ARR)
+        Radiobutton(wm, text="layer", variable=cF.get_var("arr"), value=self.ARR_LAYER).grid(row=12, column=COL_ARR)
+        Radiobutton(wm, text="stack", variable=cF.get_var("arr"), value=self.ARR_STACK).grid(row=13, column=COL_ARR)
        
-        self.iv_sort = IntVar()
-        self.iv_sort.set(self.SORT_ORIG)
-        Radiobutton(wm, text="orig", variable=self.iv_sort, value=self.SORT_ORIG).grid(row=11, column=self.COL_SORT)
-        Radiobutton(wm, text="row", variable=self.iv_sort, value=self.SORT_ROW).grid(row=12, column=self.COL_SORT)
-        Radiobutton(wm, text="col", variable=self.iv_sort, value=self.SORT_COL).grid(row=13, column=self.COL_SORT)
-        Radiobutton(wm, text="time", variable=self.iv_sort, value=self.SORT_TIME).grid(row=14, column=self.COL_SORT)
+        cF.make_val("sort", self.SORT_ORIG)
+        Radiobutton(wm, text="orig", variable=cF.get_var("sort"), value=self.SORT_ORIG).grid(row=11, column=COL_SORT)
+        Radiobutton(wm, text="row", variable=cF.get_var("sort"), value=self.SORT_ROW).grid(row=12, column=COL_SORT)
+        Radiobutton(wm, text="col", variable=cF.get_var("sort"), value=self.SORT_COL).grid(row=13, column=COL_SORT)
+        Radiobutton(wm, text="time", variable=cF.get_var("sort"), value=self.SORT_TIME).grid(row=14, column=COL_SORT)
         
-        self.tv_first = StringVar()
-        self.tv_first.set("1")
-        self.wj_first = Entry(wm, width=3, textvariable=self.tv_first, validate=ALL)
-        self.wj_first.grid(row=11, column=self.COL_FIRST)
+        cF.make_val("first", 0, textvar=True)
+        self.wj_first = Entry(wm, width=3, textvariable=cF.get_textvar("first"), validate=ALL)
+        self.wj_first.grid(row=11, column=COL_FIRST)
+        cF.add_widget("first", self.wj_first)
         
-        self.bv_wrap = BooleanVar()
-        self.bv_wrap.set(False)
-        self.wj_wrap = Checkbutton(wm, variable=self.bv_wrap)
-        self.wj_wrap.grid(row=11, column=self.COL_WRAP)
+        cF.make_val("wrap", False)
+        self.wj_wrap = Checkbutton(wm, variable=cF.get_var("wrap"))
+        self.wj_wrap.grid(row=11, column=COL_WRAP)
 
-        self.tv_last = StringVar()
-        self.tv_last.set("")
-        self.wj_last = Entry(wm, width=3, textvariable=self.tv_last)
-        self.wj_last.grid(row=11, column=self.COL_LAST)
+        cF.make_val("last", 0, textvar=True)
+        self.wj_last = Entry(wm, width=3, textvariable=cF.get_textvar("last"))
+        self.wj_last.grid(row=11, column=COL_LAST)
+        cF.add_widget("last", self.wj_last)
 
-        size_default = "300"
-        self.tv_size = StringVar()
-        self.tv_size.set(size_default)
-        
+        cF.make_val("size", 300, textvar=True)
         ROW_SIZE =  21
-        Label(wm, text="Size").grid(row=ROW_SIZE, column=self.COL_SIZE_LABEL)
-        
-        self.tv_size = StringVar()
-        self.tv_size.set("300")
-        self.wj_size = Entry(wm, width=4, textvariable=self.tv_size)
-        self.wj_size.grid(row=21, column=self.COL_SIZE, sticky=W)
-        ###self.wj_size.delete(0,END)
-        ###self.wj_size.insert(0,size_default)
+        Label(wm, text="Size").grid(row=ROW_SIZE, column=COL_SIZE_LABEL)
+        self.wj_size = Entry(wm, width=4, textvariable=cF.get_textvar("size"))
+        self.wj_size.grid(row=21, column=COL_SIZE, sticky=W)
+        cF.add_widget("size", self.wj_size)
 
         # Selection options
         ROW_SQ = 12
-        Label(wm, text="square").grid(row=ROW_SQ, column=self.COL_SELECT)
-        self.tv_square = StringVar()
-        self.tv_square.set(".*")
-        self.wj_square = Entry(wm, width=18, textvariable=self.tv_square)
-        self.wj_square.grid(row=ROW_SQ, column=self.COL_SELECT+1, columnspan=3)
+        cF.make_val("square", ".*", repeat=True, textvar=True)
+        Label(wm, text="square").grid(row=ROW_SQ, column=COL_SELECT, sticky=E)
+        self.wj_square = Entry(wm, width=18, textvariable=cF.get_textvar("square"))
+        self.wj_square.grid(row=ROW_SQ, column=COL_SELECT+1, columnspan=3, sticky=W)
+        cF.add_widget("square", self.wj_square)
         
-        Label(wm, text="tour").grid(row=ROW_SQ+1, column=self.COL_SELECT)
-        self.bv_tour = BooleanVar()
-        self.bv_tour.set(False)
-        self.wj_tour = Checkbutton(wm, variable=self.bv_tour)
-        self.wj_tour.grid(row=ROW_SQ+1, column=self.COL_SELECT+1, sticky=W)
+        cF.make_val("closed_tour", False, repeat=True)
+        Label(wm, text="closed tour").grid(row=ROW_SQ+1, column=COL_SELECT, sticky=E)
+        self.wj_tour = Checkbutton(wm, variable=cF.get_var("closed_tour"), onvalue=True, offvalue=False)
+        self.wj_tour.grid(row=ROW_SQ+1, column=COL_SELECT+1, sticky=W)
         
-        Label(wm, text="NOT tour").grid(row=ROW_SQ+1, column=self.COL_SELECT+2)
-        self.bv_not_tour = BooleanVar()
-        self.bv_not_tour.set(False)
-        self.wj_not_tour = Checkbutton(wm, variable=self.bv_not_tour)
-        self.wj_not_tour.grid(row=ROW_SQ+1, column=self.COL_SELECT+3, sticky=W)
+        cF.make_val("not_tour", False)
+        Label(wm, text="NOT tour").grid(row=ROW_SQ+1, column=COL_SELECT+2, sticky=E)
+        self.wj_not_tour = Checkbutton(wm, variable=cF.get_var("not_tour"))
+        self.wj_not_tour.grid(row=ROW_SQ+1, column=COL_SELECT+3, sticky=W)
         
-        Label(wm, text="comp").grid(row=ROW_SQ+2, column=self.COL_SELECT)
-        self.bv_comp = BooleanVar()
-        self.bv_comp.set(False)
-        self.wj_comp = Checkbutton(wm, variable=self.bv_comp)
-        self.wj_comp.grid(row=ROW_SQ+2, column=self.COL_SELECT+1, sticky=W)
+        cF.make_val("comp", False)
+        Label(wm, text="complete").grid(row=ROW_SQ+2, column=COL_SELECT, sticky=E)
+        self.wj_comp = Checkbutton(wm, variable=cF.get_var("comp"))
+        self.wj_comp.grid(row=ROW_SQ+2, column=COL_SELECT+1, sticky=W)
         
-        Label(wm, text="NOT comp").grid(row=ROW_SQ+2, column=self.COL_SELECT+2)
-        self.bv_not_comp = BooleanVar()
-        self.bv_not_comp.set(False)
-        self.wj_not_comp = Checkbutton(wm, variable=self.bv_not_comp)
-        self.wj_not_comp.grid(row=ROW_SQ+2, column=self.COL_SELECT+3, sticky=W)
+        cF.make_val("not_comp", False)
+        Label(wm, text="NOT comp").grid(row=ROW_SQ+2, column=COL_SELECT+2, sticky=E)
+        self.wj_not_comp = Checkbutton(wm, variable=cF.get_var("not_comp"))
+        self.wj_not_comp.grid(row=ROW_SQ+2, column=COL_SELECT+3, sticky=W)
         
-        Label(wm, text="prev list").grid(row=ROW_SQ+3, column=self.COL_SELECT)
-        self.bv_prev_list = BooleanVar()
-        self.bv_prev_list.set(False)
-        self.wj_prev_list = Checkbutton(wm, variable=self.bv_prev_list)
-        self.wj_prev_list.grid(row=ROW_SQ+3, column=self.COL_SELECT+1, sticky=W)
+        Label(wm, text="run prev list").grid(row=ROW_SQ+3, column=COL_SELECT, sticky=E)
+        cF.make_val("prev_list", False)
+        self.wj_prev_list = Checkbutton(wm, variable=cF.get_var("prev_list"))
+        self.wj_prev_list.grid(row=ROW_SQ+3, column=COL_SELECT+1, sticky=W)
 
         Label(wm, text="").grid(row=ROW_SIZE+1)
         ROW_ARRANGE_BUTTON = ROW_SIZE+1
         COL_ARRANGE_BUTTON = 0             
         Button(wm, text="Arrange", command=self.arrange_button).grid(row=ROW_ARRANGE_BUTTON, column=COL_ARRANGE_BUTTON)
+
+
+        Label(wm, text="Running Control").grid(row=ROW_ARRANGE_BUTTON+1, columnspan=5)
+        ROW_NROW_COL = ROW_ARRANGE_BUTTON+2
+        COL_NROW_COL = 0             
+         
+        Label(wm, text="Rows").grid(row=ROW_NROW_COL, column=COL_NROW_COL, sticky=E)
+        cF.make_val("nrow", 8, repeat=True, textvar=True)
+        self.wj_nrow = Entry(wm, width=3, textvariable=cF.get_textvar("nrow"))
+        self.wj_nrow.grid(row=ROW_NROW_COL, column=COL_NROW_COL+1, sticky=W)
+        cF.add_widget("nrow", self.wj_nrow)
+         
+        Label(wm, text="Cols").grid(row=ROW_NROW_COL, column=COL_NROW_COL+2, sticky=E)
+        cF.make_val("ncol", 8, repeat=True, textvar=True)
+        self.wj_ncol = Entry(wm, width=3, textvariable=cF.get_textvar("ncol"))
+        self.wj_ncol.grid(row=ROW_NROW_COL, column=COL_NROW_COL+3, sticky=W)
+        cF.add_widget("ncol", self.wj_ncol)
         
-        ROW_RUN_CONTROL = ROW_ARRANGE_BUTTON + 1
-        Label(wm, text="").grid(row=ROW_RUN_CONTROL)
+        ROW_FIND_CLOSED = ROW_NROW_COL
+        COL_FIND_CLOSED = COL_NROW_COL+4
+        cF.make_val("find_closed", True, repeat=True, textvar=True)
+        Label(wm, text="find\nclosed tours").grid(row=ROW_FIND_CLOSED, column=COL_FIND_CLOSED, sticky=E)
+        self.wj_tour = Checkbutton(wm, variable=cF.get_var("find_closed"), onvalue=True, offvalue=False)
+        self.wj_tour.grid(row=ROW_NROW_COL, column=COL_FIND_CLOSED+1, sticky=W)
+
+        
+        ROW_RUN_CONTROL = ROW_NROW_COL + 1
+        ###Label(wm, text="").grid(row=ROW_RUN_CONTROL)
         ROW_DISPLAY = ROW_RUN_CONTROL+1
-        Label(wm, text="display\nmove").grid(row=ROW_DISPLAY, column=0)
-        self.bv_display_move = BooleanVar()
-        self.bv_display_move.set(False)
-        self.wj_display_move = Checkbutton(wm, variable=self.bv_display_move)
+        Label(wm, text="display\nmove").grid(row=ROW_DISPLAY, column=0, sticky=E)
+        cF.make_val("display_move", False, repeat=True)
+        self.wj_display_move = Checkbutton(wm, variable=cF.get_var("display_move"))
         self.wj_display_move.grid(row=ROW_DISPLAY, column=1, sticky=W)
          
         Label(wm, text="move\ntime").grid(row=ROW_DISPLAY, column=2, sticky=E)
-        self.tv_move_time = StringVar()
-        self.tv_move_time.set("")
-        self.wj_move_time = Entry(wm, width=4, textvariable=self.tv_move_time)
+        cF.make_val("move_time", 2., repeat=True, textvar=True)
+        self.wj_move_time = Entry(wm, width=4, textvariable=cF.get_textvar("move_time"))
         self.wj_move_time.grid(row=ROW_DISPLAY, column=3, sticky=W)
+        cF.add_widget("move_time", self.wj_move_time)
          
         Label(wm, text="time\nlimit").grid(row=ROW_DISPLAY, column=4, sticky=E)
-        self.tv_time_limit = StringVar()
-        self.tv_time_limit.set("")
-        self.wj_time_limit = Entry(wm, width=5, textvariable=self.tv_time_limit)
+        cF.make_val("time_limit", 2.0, repeat=True, textvar=True)
+        self.wj_time_limit = Entry(wm, width=5, textvariable=cF.get_textvar("time_limit"))
         self.wj_time_limit.grid(row=ROW_DISPLAY, column=5, sticky=W)
+        cF.add_widget("time_limit", self.wj_time_limit)
         
         ###Label(wm, text="").grid(row=ROW_DISPLAY+1)
         ROW_RUN_BUTTON = ROW_DISPLAY+2
@@ -178,10 +212,18 @@ class PathsWindow(Frame):
         Button(wm, text="Step", command=self.step_button).grid(row=ROW_RUN_BUTTON, column=COL_RUN_BUTTON+3)
         Button(wm, text="Back", command=self.back_button).grid(row=ROW_RUN_BUTTON, column=COL_RUN_BUTTON+4)
         Button(wm, text="Stop", command=self.stop_button).grid(row=ROW_RUN_BUTTON, column=COL_RUN_BUTTON+5)
+        
+        NEXT_TOUR_BUTTON = ROW_RUN_BUTTON+1
+        COL_NEXT_TOUR_BUTTON = 1
+        Button(wm, text="Next Tour", command=self.next_tour_button).grid(row=NEXT_TOUR_BUTTON, column=COL_NEXT_TOUR_BUTTON)
+        Button(wm, text="Prev Tour", command=self.prev_tour_button).grid(row=NEXT_TOUR_BUTTON, column=COL_NEXT_TOUR_BUTTON+1)
 
+        size_check = self.get_val("size", 123)
+        if type(size_check) != int:
+            raise SelectError("size should be int")
 
     def enter_cmd(self, event):
-        self.update_vars()
+        self.update_settings()
 
     def get_prev_starts(self):
         """ Get starting squares corresponding to previous arranged paths
@@ -194,44 +236,54 @@ class PathsWindow(Frame):
             path_starts.append(dpath.path[0])
         return path_starts
     
-    def get_starts(self, locs=None, nrows=8, ncols=8, start_ri=None, end_ri=None,
+    def get_starts(self, locs=None, nrow=None, ncol=None, start_ri=None, end_ri=None,
                    start_ci=None, end_ci=None):
         """ Get list of starting squares
-        :locs: base list of squares(loc or algebraic notation) default: nrowsxncols squares
-        :nrows: number of rows default:8
-        :ncols: number of cols default:8
+        :locs: base list of squares(loc or algebraic notation) default: nrowxncol squares
+        :nrow: number of rows default: from gen_paths
+        :ncol: number of cols default: from gen_paths
         :start_ri: beginning row index default: 0
-        :end_ri: ending row index default: nrows-1
+        :end_ri: ending row index default: nrow-1
         :start_ci: beginning col index default: 0
-        :end_ci: ending column index default: ncols-1
+        :end_ci: ending column index default: ncol-1
         :returns: pair: list of starting squares
         """
+        if ncol is None:
+            ncol = self.paths_gen.ncol
+        if nrow is None:
+            nrow = self.paths_gen.nrow
+            
+        cb = ChessBoard(nrow=nrow, ncol=ncol)
         if locs is None:
             path_starts = []
             if start_ri is None:
                 start_ri = 0
             if end_ri is None:
-                end_ri = nrows-1
+                end_ri = nrow-1
             if start_ci is None:
                 start_ci = 0
             if end_ci is None:
-                end_ci = ncols-1
+                end_ci = ncol-1
             for ri in range(start_ri, end_ri+1):
                 for ci in range(start_ci, end_ci+1):
                     loc = (ci,ri)
                     path_starts.append(loc)
             locs = path_starts
 
-        first = self.get_pa_var("first")
-        wrap = self.get_pa_var("wrap")
-        last = self.get_pa_var("last")
-        square = self.get_pa_var("square")
+        first = self.get_val("first", 0)
         lend = len(locs)
-        if last is None or last == "":
+        if first == 0:
+            first = 1
+        wrap = self.get_val("wrap")
+        last = self.get_val("last", 0)
+        if last == 0:
+            last = lend + 1
+        square = self.get_val("square")
+        if last == 0:
             last = lend
         loc_list = []
         for np in range(1, lend+1):
-            if first is None or first == "" or np < first:
+            if first == 0 or np < first:
                 if wrap:
                     loc_list.append(locs[np-1])
             else:
@@ -247,7 +299,7 @@ class PathsWindow(Frame):
                     square += "("  + pat + ")"
             a_list = []
             for loc in loc_list:
-                sq = ChessBoard.loc2desc(loc)
+                sq = cb.loc2desc(loc)
                 if re.search(square, sq):
                     a_list.append(loc)
             loc_list = a_list
@@ -273,27 +325,29 @@ class PathsWindow(Frame):
             
         start_locs = self.get_starts(locs=locs)
         start_paths = []            # Get paths with these starting locs
+        other_paths = []
         for dpath in dpaths:
             if dpath.path[0] in start_locs:
                 start_paths.append(dpath)
-
-        last = self.get_pa_var("last")
-        if last is None or last == "":
+            else:
+                other_paths.append(dpath)
+        last = self.get_val("last")
+        if last is 0 or last == "":
             last = len(dpaths)
-        tour = self.get_pa_var("tour")
-        not_tour = self.get_pa_var("not_tour")
-        comp = self.get_pa_var("comp") 
-        not_comp = self.get_pa_var("not_comp")  
+        closed_tour = self.get_val("closed_tour")
+        not_tour = self.get_val("not_tour")
+        comp = self.get_val("comp") 
+        not_comp = self.get_val("not_comp")  
 
         arr_list = start_paths
-        other_list = []            # other paths
-        if tour or not_tour:
+        other_list = other_paths
+        if closed_tour or not_tour:
             a_list = []
             o_list = []
             for ad in arr_list:
                 used = False
                 is_tour = ad.is_closed_tour
-                if tour:
+                if closed_tour:
                     if is_tour:
                         a_list.append(ad)
                         used = True
@@ -342,34 +396,49 @@ class PathsWindow(Frame):
         wm.update_idletasks()
         wm.update()
             
-    def update_vars(self):
-        self.tv_size.set(self.wj_size.get())
-        self.tv_first.set(self.wj_first.get())
-        self.tv_last.set(self.wj_last.get())
-        self.tv_square.set(self.wj_square.get())
-        self.tv_move_time.set(self.wj_move_time.get())
-        self.tv_time_limit.set(self.wj_time_limit.get())
+    def update_settings(self):
+        cF.update_settings()
         
     def arrange_button(self):
         """ Called when button pressed
             Updates variables
         """
-        self.update_vars()
+        self.update_settings()
         if self.arrange_call is not None:
             self.arrange_call()
         
     def run_button(self):
         """ Called when button pressed directly
+        :adj_tour: if present, adjust tour number before run
         """
         self.step = False           # Clear step command
         self.is_pause = False
         self.run_command()
         
+    def next_tour_button(self):
+        """ Called when next_tour pressed
+        """
+        if self.paths_gen is None:
+            SlTrace.lg("paths_gen connection has NOT been setup")
+            return
+        
+        self.paths_gen.next_tour()
+        
+    def prev_tour_button(self):
+        """ Called when prev_tour pressed
+        """
+        if self.paths_gen is None:
+            SlTrace.lg("paths_gen connection has NOT been setup")
+            return
+        
+        self.paths_gen.prev_tour()
+        
     def run_command(self):
         """ Called when running program
             Updates variables
+            :adj_tour: if present adjuest tour number before running
         """
-        self.update_vars()
+        self.update_settings()
         self.run = True
         self.pause = False
         if self.run_call is not None:
@@ -380,7 +449,7 @@ class PathsWindow(Frame):
             Updates variables
         """
         self.is_action = True
-        self.update_vars()
+        self.update_settings()
         self.is_pause = True
         if self.pause_call is not None:
             self.wm.after(1, self.pause_call)
@@ -389,7 +458,7 @@ class PathsWindow(Frame):
         """ Called when button pressed
             Updates variables
         """
-        self.update_vars()
+        self.update_settings()
         self.is_pause = False
         self.is_step = False
         if self.continue_call is not None:
@@ -399,8 +468,8 @@ class PathsWindow(Frame):
         """ Called when button pressed
             Updates variables
         """
-        self.update_vars()
-        self.set_pa_var("display_move")
+        self.update_settings()
+        self.set_val("display_move")
         if self.step_call is not None:
             self.step_call()
 
@@ -408,143 +477,70 @@ class PathsWindow(Frame):
         """ Called when button pressed
             Updates variables
         """
-        self.update_vars()
+        self.update_settings()
         self.is_action = True
         if self.back_call is not None:
             self.back_call()
+    
+    def set_paths_gen(self, paths_gen):     #w:
+        """ connect paths_gen to control window
+        :paths_gen: PathsGen control 
+        """
+        self.paths_gen = paths_gen
         
-    def stop_button(self):
+    def stop_button(self):             
         """ Called when button pressed
             Updates variables
         """
-        self.update_vars()
-        if self.stop_call is not None:
-            self.stop_call()
+        self.set_val("display_move")     # Force action
+        self.update_settings()
         self.is_action = True
-        self.run = False
-        self.step = False
-        self.pause = True       # Force pause
+        self.is_pause = True
+        if self.paths_gen is None:
+            raise SelectError("paths_gen connection has NOT been setup")
+        self.paths_gen.stop_gen()
             
-    def get_pa_var(self, var_name):
+    def get_val(self, name, default=None):
         """ Returns current variable setting
-        :var_name: variable name 
-                    arr: arrangemengt values:
+        :name: variable name 
+        :default: value used if val is not set
         """
-        if var_name == "arr":
-            return self.iv_arr.get()
-        
-        if var_name == "display_move":
-            return self.bv_display_move.get()
-        
-        if var_name == "prev_list":
-            return self.bv_prev_list.get()
-        
-        if var_name == "sort":
-            return self.iv_sort.get()
-        
-        if var_name == "first":
-            first = self.tv_first.get()
-            if first == "":
-                return 1
-            try:
-                return int(first)
+        val = cF.get_val(name, default=default)
+        if name == "first":
+            if val == "":
+                val == 0
+        elif name == "last":
+            if val == "" or val == 0:
+                val = 0
+        return val
             
-            except:
-                return 1
-        
-        if var_name == "last":
-            last = self.tv_last.get()
-            if last == "":
-                return None
-            try:
-                return int(last)
-            
-            except:
-                return None
-        
-        if var_name == "size":
-            size = self.tv_size.get()
-            if size == "":
-                return 200
-            try:
-                return int(size)
-            
-            except:
-                return 200
-        
-        if var_name == "wrap":
-            return self.bv_wrap.get()
-
-        if var_name == "square":
-            return self.tv_square.get()
-
-        if var_name == "move_time":
-            move_time = self.tv_move_time.get()
-            if move_time is None or move_time == "":
-                return move_time
-            
-            return float(move_time)
-        
-        if var_name == "tour":
-            return self.bv_tour.get()
-        
-        if var_name == "not_tour":
-            return self.bv_not_tour.get()
-        
-        if var_name == "comp":
-            return self.bv_comp.get()
-        
-        if var_name == "not_comp":
-            return self.bv_not_comp.get()
-        
-        if var_name == "time_limit":
-            time_limit = self.tv_time_limit.get()
-            if time_limit is None or time_limit == "":
-                return time_limit
-            
-            return float(time_limit)
-                    
-        raise SelectError(f"Unrecognized pa_var: '{var_name}'")
-            
-    def set_pa_var(self, var_name, val=None):
+    def set_val(self, name, val=None):
         """ Sets variable setting
         :var_name: variable name 
-        :val: value default: True
+        :val: value default: None
         """
         if val is None:
-            val = True
-        if var_name == "arr":
-            self.iv_arr.set(val)
-        elif var_name == "display_move":
-            self.bv_display_move.set(val)
-        elif var_name == "sort":
-            self.iv_sort.set(val)
-        elif var_name == "first":
-            self.tv_first.set(str(val))
-        elif var_name == "last":
-            self.tv_last.set(str(val))
-        elif var_name == "move_time":
-            self.tv_move_time.set(str(val))
-        elif var_name == "prev_list":
-            self.bv_prev_list.set(val)
-        elif var_name == "size":
-            self.tv_size.set(str(val))
-        elif var_name == "wrap":
-            self.bv_wrap.set(val)
-        elif var_name == "square":
-            self.tv_square.set(val)
-        elif var_name == "tour":
-            self.bv_tour.set(val)
-        elif var_name == "not_tour":
-            self.bv_not_tour.set(val)
-        elif var_name == "comp":
-            self.bv_comp.set(val)
-        elif var_name == "not_comp":
-            self.bv_not_comp.set(val)
-        elif var_name == "time_limit":
-            self.tv_time_limit.set(val)
-        else:    
-            raise SelectError(f"Unrecognized pa_var: '{var_name}'")
+            cur_val = cF.get_val(name)
+            tcur_val = type(cur_val)
+            if tcur_val == bool:
+                val = True
+            elif tcur_val == str:
+                val = ""
+            elif tcur_val == int:
+                val = 0
+            elif tcur_val == float:
+                val = 0.
+        cF.set_val(name, val)
+
+    def undo_settings(self):
+        """ Recover previous saved window settings
+        """
+        cF.undo_settings()
+    
+    def redo_settings(self):
+        """ Recover settings replaced by last undo
+        """
+        cF.redo_settings()
     
 if __name__ == "__main__":
     
@@ -552,10 +548,7 @@ if __name__ == "__main__":
         print("arrange test call")
         
     wm = Tk()
+    
     pW = PathsWindow(wm, arrange_call=arrange)
-    ###'''
-    pW.set_pa_var("arr", PathsWindow.ARR_STACK)
-    pW.set_pa_var("last", 64)
-    pW.set_pa_var("size", 250)
-    ###'''
+    ###pW.set_val("arr", PathsWindow.ARR_STACK)
     mainloop()

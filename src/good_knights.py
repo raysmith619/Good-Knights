@@ -37,49 +37,56 @@ from tkinter import *
 
 from grid_window import GridWindow
 from select_trace import SlTrace
+from select_control import SelectControl
+
 from chess_board import ChessBoard
 from chess_board_display import ChessBoardDisplay
+display_path = ChessBoardDisplay.display_path
 from paths_window import PathsWindow
 from paths_gen import PathsGen
 
-loc2desc = ChessBoard.loc2desc 
-loc2tuple = ChessBoard.loc2tuple 
-path_desc = ChessBoard.path_desc
-display_path = ChessBoardDisplay.display_path
+pWwm = Tk()                 # To support grid layout - MUST be done before wm
+###wm = Tk()                   # To force GUI to main thread
+wm = pWwm
+pW = None
+cF = SelectControl(control_prefix="path_control")
+ncol = cF.make_val("ncol", 4)     # default, override from properties
 
-closed_tours = True         # True => only accept closed tours
-display_complete = True    # True => display each complete(cover all) path
-display_move = False
-move_time = .1              # Time per move (seconds)
-display_path_board = False  # True => display path board each path
-track_all_path = False
+closed_tours = cF.make_val("find_closed", True)         # True => only accept closed tours
+display_complete = cF.make_val("display_complete", True)    # True => display each complete(cover all) path
+display_move = display_complete = cF.make_val("display_move", False)
+move_time = cF.make_val("move_time", .1)              # Time per move (seconds)
+display_path_board = cF.make_val("display_path_board", False)  # True => display path board each path
+track_all_path = cF.make_val("track_all_path", False)
 ###track_all_path = True               # TFD
-max_look_ahead = 5          # Maximum look-ahead for best move testing    
-nrows = ncols = 8
-###nrows = ncols = 6       # TFD
-###nrows = ncols = 4       # TFD
-run = False             # True - run on beginning, False - wait for arrangement
+max_look_ahead = cF.make_val("max_look_ahead", 5)          # Maximum look-ahead for best move testing    
+nrow = cF.make_val("nrow", 8, repeat=True)
+ncol = cF.make_val("ncol", 8, repeat=True)
+###nrow = ncol = 6       # TFD
+###nrow = ncol = 4       # TFD
+run = cF.make_val("run", False)             # True - run on beginning, False - wait for arrangement
 ###run = True              ### TFD
-start_ri = 0
+start_ri = cF.make_val("start_ri", 0)
 ###start_ri = 2        # TFD
-end_ri = nrows-1
-start_ci = 0
+end_ri = cF.make_val("end_ri", nrow-1)
+start_ci = cF.make_val("start_ci", 0)
 ###start_ci = 3        # TFD
-end_ci = ncols-1
+end_ci = cF.make_val("end_ci", ncol-1)
 ###end_ri = 0          # TFD to limit printout
 sqno = 0
-all_paths = True
-all_paths = False       #TFD
-time_out = .5              # Time limit for path calculation
+all_paths = cF.make_val("all_paths", False)
+time_out = cF.make_val("time_out", 2)              # Time limit for path calculation
 ###time_out = 999              ### TFD
 trace = "stack_grow,complete_paths"
 trace = "stack_grow"
 trace = "back_off_trace"
-width = 300             # Chess board width in pixels
-height = 300            # Chess board height in pixels
-###trace = "stack_grow,back_off_trace,no_more_moves"
 trace = ""
+trace = cF.make_val("trace", trace)
+width = cF.make_val("width", 300)             # Chess board width in pixels
+height = cF.make_val("height", width)            # Chess board height in pixels
+###trace = "stack_grow,back_off_trace,no_more_moves"
 ###trace = "set_piece"
+
 
 def pgm_exit():
     quit()
@@ -95,23 +102,31 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 app = None
-pWwm = Tk()                 # To support grid layout - MUST be done before wm
-###wm = Tk()                   # To force GUI to main thread
-wm = pWwm
-pW = None
 paths_gen = None
 
 def arrange_cmd():
+    cb = ChessBoard(nrow=nrow, ncol=ncol)
     SlTrace.lg("Arrange Paths")
     screen_width = pWwm.winfo_screenwidth()
     screen_height = pWwm.winfo_screenheight()
     start_x = 10
     start_y = 50
+    if paths_gen is None:
+        SlTrace.lg("No paths to arrange yet")
+        return
+    
     dlist = paths_gen.displayed_paths
-    size = pW.get_pa_var("size")
-    arr = pW.get_pa_var("arr")
-    arr_list, other_list = pW.select_paths(dpaths=dlist)    
-                
+    size = pW.get_val("size")
+    arr = pW.get_val("arr")
+    arr_list, other_list = pW.select_paths(dpaths=dlist)
+    arr_locs = []
+    for dpath in arr_list:
+        arr_locs.append(dpath.path[0])    
+    other_locs = []
+    for dpath in other_list:
+        other_locs.append(dpath.path[0])    
+    SlTrace.lg(f"Arranged: {cb.path_desc(arr_locs)}")
+    SlTrace.lg(f"Hidden: {cb.path_desc(other_locs)}")            
     if arr == PathsWindow.ARR_TILE:
         cur_x, cur_y = start_x, start_y
         for arr_disp in arr_list:
@@ -134,33 +149,48 @@ def arrange_cmd():
             if cur_y > screen_height-2*size:
                 cur_y = start_y
                 cur_x += size
-        for other_disp in other_list:
-            other_disp.hide()
+    for other_disp in other_list:
+        other_disp.hide()
 
 def run_set():
-    global paths_gen, display_move, time_out
+    global paths_gen, display_move, time_out, nrow, ncol
+    global start_ri, end_ri, start_ci, end_ci
+    global closed_tours
+    global width, height
     if paths_gen is not None:
         paths_gen.destroy()
         paths_gen = None
-    use_prev_list = pW.get_pa_var("prev_list")
+    use_prev_list = pW.get_val("prev_list")
+    
+    nrow_prev = nrow
+    ncol_prev = ncol
+    nrow = pW.get_val("nrow")
+    ncol = pW.get_val("ncol")
+    if nrow != nrow_prev or ncol != ncol_prev:
+        use_prev_list = False
+        start_ri = start_ci = 0
+        end_ri = start_ri + nrow-1
+        end_ci = start_ci + ncol-1
     if use_prev_list and pW.prev_arr_list is not None:
         path_starts = pW.get_prev_starts()
     else:    
         path_starts = pW.get_starts(start_ri=start_ri, end_ri=end_ri,
                                 start_ci=start_ci, end_ci=end_ci,
-                                nrows=nrows, ncols=ncols)
-        
-    time_limit = pW.get_pa_var("time_limit")
+                                nrow=nrow, ncol=ncol)
+    closed_tours = pW.get_val("find_closed")    
+    time_limit = pW.get_val("time_limit")
     if time_limit is None or time_limit == "":
         pass            # use setup
     else:
         time_out = time_limit
 
-    display_move = pW.get_pa_var("display_move")
-    move_time = pW.get_pa_var("move_time")
+    display_move = pW.get_val("display_move")
+    move_time = pW.get_val("move_time")
     if move_time is None or move_time == "":
         move_time = .05
     ###path_starts = [(0,0)]            # TFD - one path
+    width = pW.get_val("size", width)
+    height = pW.get_val("size", height)
     paths_gen = PathsGen(path_starts=path_starts,
         time_out=time_out,
         closed_tours=closed_tours,
@@ -169,9 +199,10 @@ def run_set():
         move_time=move_time,
         width=width,
         height=height,
-        nrows = nrows,
-        ncols = ncols,
+        nrow = nrow,
+        ncol = ncol,
         max_look_ahead=max_look_ahead)
+    pW.set_paths_gen(paths_gen)     #connect paths_gen to control window
 
 def run_cmd():
     run_set()
@@ -208,8 +239,8 @@ def arrange_set():
     pW = PathsWindow(wm=pWwm, arrange_call=arrange_cmd,
          run_call=run_cmd, pause_call=pause_cmd, continue_call=continue_cmd,
          step_call=step_cmd, back_call=back_cmd, stop_call=stop_cmd)
-    pW.set_pa_var("arr", pW.ARR_TILE)
-    pW.set_pa_var("sort", pW.SORT_ORIG)
+    ### pW.set_val("arr", pW.ARR_TILE)
+    ### pW.set_val("sort", pW.SORT_ORIG)
     
 parser = argparse.ArgumentParser()
 
@@ -218,8 +249,8 @@ parser.add_argument('--display_complete', type=str2bool, dest='display_complete'
 parser.add_argument('--display_path_board', type=str2bool, dest='display_path_board', default=display_path_board)
 parser.add_argument('--max_look_ahead=', type=int, dest='max_look_ahead', default=max_look_ahead)
 parser.add_argument('--move_time=', type=float, dest='move_time', default=move_time)
-parser.add_argument('--ncols=', type=int, dest='ncols', default=ncols)
-parser.add_argument('--nrows=', type=int, dest='nrows', default=nrows)
+parser.add_argument('--ncol=', type=int, dest='ncol', default=ncol)
+parser.add_argument('--nrow=', type=int, dest='nrow', default=nrow)
 parser.add_argument('--end_ci=', type=int, dest='end_ci', default=end_ci)
 parser.add_argument('--end_ri=', type=int, dest='end_ri', default=end_ri)
 parser.add_argument('--run', type=str2bool, dest='run', default=run)
@@ -236,12 +267,12 @@ end_ci = args.end_ci
 end_ri = args.end_ri
 max_look_ahead = args.max_look_ahead
 move_time = args.move_time
-ncols = args.ncols
-nrows= args.nrows
-if end_ci >= ncols:
-    end_ci = ncols-1
-if end_ri >= nrows:
-    end_ri = nrows-1
+ncol = args.ncol
+nrow= args.nrow
+if end_ci >= ncol:
+    end_ci = ncol-1
+if end_ri >= nrow:
+    end_ri = nrow-1
 run = args.run    
 time_out = args.time_out
 width = args.width

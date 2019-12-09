@@ -9,6 +9,8 @@ from select_dots import SelectDots
 from select_trace import SlTrace
 from select_error import SelectError
 
+from numpy import rank
+
 
 class Piece(Enum):
     P = 1
@@ -52,16 +54,17 @@ display is not present so operations can
 be optimized for speed.
 """
 class ChessBoard:
-    ncols = 8
-    nrows = 8
+    ncol = 8
+    nrow = 8
     tracking_path = []
     track_all_path = False
     board_picts_mw = []
                     
     @classmethod
     def tuple2desc(cls, tp):
-        """ Convert ci,ri tuple to description string
-        :tp: (ci,ri) tuple
+        """ Convert ic,ir tuple to description string
+        return 
+        :tp: (ic,ir) tuple
         :returns: algebraic description string
         """
         col_index,row_index = tp[0],tp[1]
@@ -71,52 +74,30 @@ class ChessBoard:
         return loc_str
     
     @classmethod
-    def loc2tuple(cls, loc):
-        """ Convert location to tuple
-        :loc: if string  - letter a-h, number 1-8  algeraic chess Notation
-                if tuple - (file index (0-7 for a-h, row index 0-7 for 1-8))
-        """
-        if isinstance(loc, str):
-            if len(loc) != 2:
-                raise SelectError(f"Unrecognized notation not 2 chars: {loc}")
-            col_let = loc[0].lower()
-            col_index = ord(col_let) - ord('a')
-            row_let = loc[1]
-            row_index = int(row_let) - 1
-        else:
-            col_index = loc[0]
-            row_index = loc[1]
-        if col_index < 0 or col_index >= cls.ncols:
-            raise SelectError(f"{loc} col index {col_index:d} is out of range")
-        if row_index < 0 or row_index >= cls.nrows:
-            raise SelectError(f"{loc} row index {row_index:d} is out of range")
-        return (col_index, row_index)
-    
-    @classmethod
-    def loc2desc(cls, loc):
-        """ Get location description
-        :loc: location
-        """
-        loc = cls.loc2tuple(loc)
-        return cls.tuple2desc(loc)
+    def CBloc2tuple(cls, loc):
+        return cls.board.loc2tuple(loc)
 
 
     @classmethod
-    def path_desc(cls, path):
+    def CBpath_desc(cls, path):
         """ Generate string with path description
         :path: list of loc descriptions
         :returns: string of path
         """
-        path_str = ""
-        for loc in path:
-            if path_str != "":
-                path_str += " "
-            desc = cls.loc2desc(loc)
-            path_str += desc 
-        return path_str
+        return cls.board.path_desc(path)
+
 
     @classmethod
-    def path_dups(cls, path, logit=True):
+    def CBsquares_list(cls, locs):
+        """ Generate string with compressed
+        square listing a1,a2,...a8 => a1-8
+        :locs: list of loc descriptions
+        :returns: string of squares
+        """
+        return cls.board.squares_list(locs)
+
+    @classmethod
+    def CBpath_dups(cls, path, logit=True):
         """ Log path duplications(counts)
         :path: path list
         :logit: if True list path with dup count, in two lines
@@ -157,22 +138,21 @@ class ChessBoard:
                 
     def __init__(self,
                 base_board=None,
-                nrows=8,
-                ncols=8,
+                nrow=8,
+                ncol=8,
                  ):
         self.label_number = 0               # Number for default square labeling
-        self.squares = [['' for ri in range(nrows)] for ci in range(ncols)]
         if base_board is not None:
-            nrows = base_board.nrows
-            ncols = base_board.ncols
+            self.nrow = base_board.nrow
+            self.ncol = base_board.ncol
             self.nempty = base_board.nempty
-            for ri in range(nrows):
-                for ci in range(ncols):
-                    self.squares[ri][ci] = base_board.squares[ri][ci]
+            self.copy_squares(self, base_board)
         else:
-            self.nempty = nrows*ncols
-        self.nrows = nrows
-        self.ncols = ncols
+            self.nrow = nrow
+            self.ncol = ncol
+            self.squares = self.create_squares()
+            self.nempty = nrow*ncol
+        ChessBoard.board = self             # Set current board in class
 
 
     def get_legal_moves(self, piece=None, loc=None):
@@ -193,40 +173,40 @@ class ChessBoard:
         :returns: list of tuples for legal moves
         """
 
-        nrows = self.nrows
-        ncols = self.ncols
+        nrow = self.nrow
+        ncol = self.ncol
         col_index, row_index = self.loc2tuple(loc)
-        if col_index < 0 or col_index >= ncols:
+        if col_index < 0 or col_index >= ncol:
             raise SelectError("get_knight_moves: col_index {:d} is out of bounds".format(col_index))
         
-        if row_index < 0 or row_index >= nrows:
+        if row_index < 0 or row_index >= nrow:
             raise SelectError("get_knight_moves: row_index {:d} is out of bounds".format(row_index))
         
         pbs = []
-        ci,ri = col_index-2,row_index+1         # (1)
-        if ci >= 0 and ri < nrows:
-            pbs.append((ci,ri))
-        ci,ri = col_index-1,row_index+2         # (2)
-        if ci >= 0 and ri < nrows:
-            pbs.append((ci,ri))
-        ci,ri = col_index+1,row_index+2         # (3)
-        if ci < ncols and ri < nrows:
-            pbs.append((ci,ri))
-        ci,ri = col_index+2,row_index+1         # (4)
-        if ci < ncols and ri < nrows:
-            pbs.append((ci,ri))
-        ci,ri = col_index+2,row_index-1         # (5)
-        if ci < ncols and ri >= 0:
-            pbs.append((ci,ri))
-        ci,ri = col_index+1,row_index-2         # (6)
-        if ci < ncols and ri >= 0:
-            pbs.append((ci,ri))
-        ci,ri = col_index-1,row_index-2         # (7)
-        if ci >= 0 and ri >=0:
-            pbs.append((ci,ri))
-        ci,ri = col_index-2, row_index-1        # (8)
-        if ci >= 0 and ri >= 0:
-            pbs.append((ci,ri))
+        ic,ir = col_index-2,row_index+1         # (1)
+        if ic >= 0 and ir < nrow:
+            pbs.append((ic,ir))
+        ic,ir = col_index-1,row_index+2         # (2)
+        if ic >= 0 and ir < nrow:
+            pbs.append((ic,ir))
+        ic,ir = col_index+1,row_index+2         # (3)
+        if ic < ncol and ir < nrow:
+            pbs.append((ic,ir))
+        ic,ir = col_index+2,row_index+1         # (4)
+        if ic < ncol and ir < nrow:
+            pbs.append((ic,ir))
+        ic,ir = col_index+2,row_index-1         # (5)
+        if ic < ncol and ir >= 0:
+            pbs.append((ic,ir))
+        ic,ir = col_index+1,row_index-2         # (6)
+        if ic < ncol and ir >= 0:
+            pbs.append((ic,ir))
+        ic,ir = col_index-1,row_index-2         # (7)
+        if ic >= 0 and ir >=0:
+            pbs.append((ic,ir))
+        ic,ir = col_index-2, row_index-1        # (8)
+        if ic >= 0 and ir >= 0:
+            pbs.append((ic,ir))
         if only_empty:
             epbs = []
             for loc in pbs:
@@ -244,7 +224,7 @@ class ChessBoard:
         :returns: True if is neighbor
         """
         moves = self.get_knight_moves(loc)
-        if loc2 in moves:
+        if self.loc2tuple(loc2) in moves:
             return True
         
         return False
@@ -254,8 +234,117 @@ class ChessBoard:
         """ Clear square to empty
         """
         loc = self.loc2tuple(loc)
-        self.squares[loc[0]][loc[1]] = ""
+        ic,ir = loc[0],loc[1]
+        self.squares[ir][ic] = ""
         self.nempty += 1        
+                    
+    def loc2desc(self, loc):
+        """ Convert loc (string or loc) to description string
+        :loc: Location specifier tuple (ir, ic) or str (file
+        :returns: algebraic description string
+        """
+        tup = self.loc2tuple(loc)
+        ic,ir = tup[0], tup[1]
+        if self.ncol > 8 or self.nrow > 8:
+            desc = f"C{ic}R{ir}"
+        else:
+            c1=chr(ic + ord('a'))
+            c2=chr(ir + ord('1'))
+            desc =  c1+c2
+        return desc
+    
+    def loc2tuple(self, loc):
+        """ Convert location(string specification or loc tuple) to tuple(loc specification)
+        :loc: if string:
+                1. if first character is "C" form is C(\d+)R(\d+) for column number, row number
+                2. if letter a-h, number 1-8  algeraic chess Notation
+              if tuple - (column index, row index) if ncol AND nrow <= 8 (0-7 for a-h, row index 0-7 for 1-8))
+                      else column index = "C" column number - 1 row index = "R" row number - 1
+        """
+        if isinstance(loc, str):
+            if self.ncol > 8 or self.nrow > 8:
+                if len(str) < 4:
+                    raise SelectError(f"loc2tp: loc{loc} to short for form CnRn")
+                m = re.match(r"C(\d+)R(\d+)", loc)
+                if not m:
+                    raise SelectError(f"loc2tp: loc{loc} to not of the form CnRn")
+                ic = int(m.group(1))
+                ir = int(m.group(2))
+            else:
+                if len(loc) != 2:
+                    raise SelectError(f"Unrecognized notation: '{loc}' not 2 chars")
+                col_let = loc[0].lower()
+                ic = ord(col_let) - ord('a')
+                row_let = loc[1]
+                ir = int(row_let) - 1
+        else:
+            ic = loc[0]
+            ir = loc[1]
+        if ic < 0 or ic >= self.ncol:
+            raise SelectError(f"{loc} col index {ic} is out of range[0,{self.ncol})")
+        if ir < 0 or ir >= self.nrow:
+            raise SelectError(f"{loc} row index {ir} is out of range[0,{self.nrow})")
+
+        return (ic,ir)
+
+    def path_desc(self, path):
+        """ Generate string with path description
+        :path: list of locs loc descriptors
+        :returns: string of path
+        """
+        path_str = ""
+        for loc in path:
+            if path_str != "":
+                path_str += " "
+            desc = self.loc2desc(loc)
+            path_str += desc 
+        return path_str
+
+    def squares_list(self, locs):
+        """ Generate string with compressed
+        square listing a1,a2,...a8 => a1-8
+        :locs: list of loc descriptions
+        :returns: string of squares
+        TBD - only nrow,ncol <= 8 supported currently
+        """
+        path_str = self.path_desc(locs)
+        path_squares = path_str.split()
+        squares = sorted(path_squares)
+        
+        cpl = ""
+        cur_file = None
+        cur_rank = None
+        cur_first_rank = None
+        cur_last_rank = None
+        for sq in squares:
+            file = sq[0]
+            rank = int(sq[1])
+            if cur_file is None or file != cur_file:
+                if cur_last_rank is not None and cur_last_rank != cur_first_rank:
+                    cpl += f"-{cur_last_rank}"
+                    cur_last_rank = None
+                if cpl != "":
+                    cpl += " "
+                cur_file = file
+                cur_rank = rank
+                cur_first_rank = rank
+                cur_last_rank = rank
+                cpl +=  f"{cur_file}{cur_rank}"
+                continue
+            if cur_last_rank is not None and rank == cur_last_rank+1:
+                cur_last_rank += 1
+                continue
+                
+            if cur_last_rank is not None and cur_last_rank != cur_first_rank:
+                cpl += f"-{cur_last_rank}"
+            cur_file = file
+            cur_rank = cur_last_rank = rank
+            if cpl != "":
+                cpl += " "
+            cpl +=   f"{cur_file}{cur_rank}"
+        if cur_last_rank is not None and cur_last_rank != cur_first_rank:
+            cpl += f"-{cur_last_rank}"
+        return cpl
         
 
     def set_piece(self, piece, loc=None):
@@ -274,17 +363,19 @@ class ChessBoard:
                 else:
                     loc = self.loc2tuple(loc)
             else:
-                raise SelectError("Unrecognized piece string:'{}'".format(piece))
+                raise SelectError(f"Unrecognized piece string:'{piece}'")
             
         else:
-            raise SelectError("Piece is not a string {}".format(piece))        
+            raise SelectError(f"Piece({piece}) is not a string")        
         if SlTrace.trace("set_piece"):
             SlTrace.lg(f"set_piece {piece} at {self.loc2desc(loc)}") 
 
+        loc = self.loc2tuple(loc)      # Support str or tuple
         if not self.is_empty(loc):
             raise SelectError(f"Tried to place {piece} in nonempty square {self.loc2desc(loc)}") 
-           
-        self.squares[loc[0]][loc[1]] = pstr
+        ic = loc[0]
+        ir = loc[1]   
+        self.squares[ir][ic] = pstr
         self.nempty -= 1        
 
 
@@ -295,16 +386,17 @@ class ChessBoard:
         if len(loc) < 2:
             SlTrace.lg(f"loc{loc} to short")
             return False
-        
-        if loc[0] >= self.nrows:
-            SlTrace.lg(f"loc(loc[0]) out of range")
+        ic = loc[0]
+        ir = loc[1]
+        if ic >= self.ncol:
+            SlTrace.lg(f"is_empty: ic({ic}) >= ncol({self.ncol}) out of range")
             return False
         
-        if loc[1] >= self.nrows:
-            SlTrace.lg(f"loc(loc[0]) out of range")
+        if ir >= self.nrow:
+            SlTrace.lg(f"is_empty: ir({ir}) >= nrow({self.nrow}) out of range")
             return False
         
-        if self.squares[loc[0]][loc[1]] == "":
+        if self.squares[ir][ic] == "":
             return True
         
         return False
@@ -326,7 +418,7 @@ class ChessBoard:
         """
         dot_row = sq.get_row()
         dot_col = sq.get_col()
-        row_index = self.select_dots.nrows - dot_row
+        row_index = self.select_dots.nrow - dot_row
         col_index = dot_col - 1
         
         if let:
@@ -339,13 +431,50 @@ class ChessBoard:
         :loc: location
         """
         loc = self.loc2tuple(loc)
-        return self.squares[loc[0]][loc[1]]
+        ic,ir = loc[0],loc[1]
+        return self.squares[ir][ic]
+
+
+    def create_squares(self):
+        """ Initialize set of squares
+        :returns: set of empty squares
+        """
+        squares = [['' for ic in range(self.ncol)] for ir in range(self.nrow)]
+        return squares
+
+
+    def copy_squares(self, dest=None, src=None):
+        """ Copy squares contents
+        :dest: destination board
+        :src: source board
+        """
+        if not hasattr(dest, "squares"):
+            dest.squares = src.create_squares()
+            
+        if dest.nrow != src.nrow:
+            raise SelectError(f"copy_squares: dest: nrow:{dest.nrow} != src: nrow:{src.nrow})")
+        
+        if dest.ncol != src.ncol:
+            raise SelectError(f"copy_squares: dest: ncol:{dest.ncol} != src: ncol:{src.ncol})")
+        
+        if len(dest.squares) != len(src.squares):
+            raise SelectError(f"copy_squares len(dest.sqares({len(dest.squares)} != len(src.squares)({len(src.squares)}")
+        if len(dest.squares[0]) != len(src.squares[0]):
+            raise SelectError(f"copy_squares len(dest.sqares[0])({len(dest.squares[0])}) != len(src.squares[0])({len(src.squares[0])})")
+       
+        for ir in range(dest.nrow):
+            for ic in range(dest.ncol):
+                try:
+                    dest.squares[ir][ic] = src.squares[ir][ic]
+                except:
+                    raise SelectError(f"copy_squares: assignment error:ir={ir} ic={ic}")
+
 
 
 loc2desc = ChessBoard.loc2desc 
 loc2tuple = ChessBoard.loc2tuple 
 path_desc = ChessBoard.path_desc
-
+squares_list = ChessBoard.squares_list
  
 #########################################################################
 #          Self Test                                                    #
@@ -365,9 +494,9 @@ if __name__ == "__main__":
     #creation of an instance
     cB = ChessBoard()
     cb2 = ChessBoard()
-    for ci in range(8):
-        for ri in range(8):
-            start_loc = (ri,ci)
+    for ic in range(8):
+        for ir in range(8):
+            start_loc = (ir,ic)
             SlTrace.lg(f"\n Start: {cb2.loc2desc(start_loc)}")
             for move in cb2.get_legal_moves(loc=start_loc):
                 SlTrace.lg(f"    move:{cb2.loc2desc(move)}")
