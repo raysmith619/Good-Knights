@@ -3,7 +3,6 @@
 Support searching for knights paths on a chess board calculation
 """
 import datetime
-import traceback
 from select_trace import SlTrace
 from select_error import SelectError
 from select_timeout import SelectTimeout
@@ -20,7 +19,6 @@ display_path = ChessBoardDisplay.display_path
 """ 
 From Stackoverflow.com
 """
-import time
 def by_first(tp):
     """ Sort helper to pick first tuple element
     """
