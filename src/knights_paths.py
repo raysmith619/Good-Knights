@@ -225,7 +225,7 @@ class KnightsPaths:
             self.ntry += 1
             if SlTrace.trace("no_more_moves"):
                 SlTrace.lg("{:d}: No more moves at {} len_stk={:d}"
-                           .format(self.ntry, loc2desc(next_move), len_stk))
+                           .format(self.ntry, loc2desc(next_move), len(self.path_stack)))
             if self.max_try is not None and self.ntry > self.max_try:
                 SlTrace.lg("Giving up this search")
                 return True
@@ -407,7 +407,7 @@ class KnightsPaths:
         if desc is None:
             desc = ""
         path = self.path_stack_path()
-        ChessBoardDisplay.display_path(desc, path) 
+        ChessBoardDisplay.display_path(path, desc=desc) 
 
 
     def operator_action_check(self):

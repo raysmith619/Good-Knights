@@ -31,6 +31,7 @@ Develop board display to provide current state, lookahead moves
    
 """
 import os
+import sys
 import argparse
 import re
 from tkinter import *
@@ -44,6 +45,10 @@ from chess_board_display import ChessBoardDisplay
 display_path = ChessBoardDisplay.display_path
 from paths_window import PathsWindow
 from paths_gen import PathsGen
+
+src_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(src_dir)
+SlTrace.lg(f"Using work directory:{src_dir}")
 
 pWwm = Tk()                 # To support grid layout - MUST be done before wm
 ###wm = Tk()                   # To force GUI to main thread

@@ -2,6 +2,8 @@
 """
 Path Display and Arrangement window
 """
+import re
+
 from tkinter import *
 
 from select_error import SelectError

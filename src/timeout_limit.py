@@ -3,7 +3,9 @@
 """
 from threading import Thread
 import functools
-from matplotlib.dates import seconds
+import datetime
+###OLD from matplotlib.dates import seconds
+import matplotlib.dates as mdates
 
 def time_limit(time_len):
     def deco(func):

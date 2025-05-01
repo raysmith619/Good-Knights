@@ -9,7 +9,6 @@ from select_dots import SelectDots
 from select_trace import SlTrace
 from select_error import SelectError
 
-from numpy import rank
 
 
 class Piece(Enum):
@@ -237,15 +236,16 @@ class ChessBoard:
         ic,ir = loc[0],loc[1]
         self.squares[ir][ic] = ""
         self.nempty += 1        
-                    
-    def loc2desc(self, loc):
+    
+    @classmethod                
+    def loc2desc(cls, loc):
         """ Convert loc (string or loc) to description string
         :loc: Location specifier tuple (ir, ic) or str (file
         :returns: algebraic description string
         """
-        tup = self.loc2tuple(loc)
+        tup = cls.loc2tuple(loc)
         ic,ir = tup[0], tup[1]
-        if self.ncol > 8 or self.nrow > 8:
+        if cls.ncol > 8 or cls.nrow > 8:
             desc = f"C{ic}R{ir}"
         else:
             c1=chr(ic + ord('a'))
@@ -253,7 +253,8 @@ class ChessBoard:
             desc =  c1+c2
         return desc
     
-    def loc2tuple(self, loc):
+    @classmethod
+    def loc2tuple(cls, loc):
         """ Convert location(string specification or loc tuple) to tuple(loc specification)
         :loc: if string:
                 1. if first character is "C" form is C(\d+)R(\d+) for column number, row number
@@ -262,7 +263,7 @@ class ChessBoard:
                       else column index = "C" column number - 1 row index = "R" row number - 1
         """
         if isinstance(loc, str):
-            if self.ncol > 8 or self.nrow > 8:
+            if cls.ncol > 8 or cls.nrow > 8:
                 if len(str) < 4:
                     raise SelectError(f"loc2tp: loc{loc} to short for form CnRn")
                 m = re.match(r"C(\d+)R(\d+)", loc)
@@ -280,14 +281,15 @@ class ChessBoard:
         else:
             ic = loc[0]
             ir = loc[1]
-        if ic < 0 or ic >= self.ncol:
-            raise SelectError(f"{loc} col index {ic} is out of range[0,{self.ncol})")
-        if ir < 0 or ir >= self.nrow:
-            raise SelectError(f"{loc} row index {ir} is out of range[0,{self.nrow})")
+        if ic < 0 or ic >= cls.ncol:
+            raise SelectError(f"{loc} col index {ic} is out of range[0,{cls.ncol})")
+        if ir < 0 or ir >= cls.nrow:
+            raise SelectError(f"{loc} row index {ir} is out of range[0,{cls.nrow})")
 
         return (ic,ir)
 
-    def path_desc(self, path):
+    @classmethod
+    def path_desc(cls, path):
         """ Generate string with path description
         :path: list of locs loc descriptors
         :returns: string of path
@@ -296,7 +298,7 @@ class ChessBoard:
         for loc in path:
             if path_str != "":
                 path_str += " "
-            desc = self.loc2desc(loc)
+            desc = cls.loc2desc(loc)
             path_str += desc 
         return path_str
 
